@@ -35,7 +35,9 @@ class ProxyConfig(BaseModel):
 class TelegramConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    proxy: ProxyConfig = Field(default_factory=ProxyConfig)
+    proxy: ProxyConfig = Field(
+        default_factory=ProxyConfig,
+    )
 
 
 class BotConfig(BaseModel):
@@ -54,36 +56,62 @@ class CompressionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     format: CompressionFormat = CompressionFormat.ZIP
-    level: int = Field(default=6, ge=0, le=9)
+
+    level: int = Field(
+        default=6,
+        ge=0,
+        le=9,
+    )
 
 
 class RetentionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    keep_last: int = Field(default=10, ge=1)
+
+    keep_last: int = Field(
+        default=10,
+        ge=1,
+    )
 
 
 class BackupConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
+
     directory: Path = Path("./backups")
 
-    compression: CompressionConfig = Field(default_factory=CompressionConfig)
+    compression: CompressionConfig = Field(
+        default_factory=CompressionConfig,
+    )
 
-    retention: RetentionConfig = Field(default_factory=RetentionConfig)
+    retention: RetentionConfig = Field(
+        default_factory=RetentionConfig,
+    )
+
+    @field_validator("directory")
+    @classmethod
+    def validate_directory(
+        cls,
+        value: Path,
+    ) -> Path:
+        return value.expanduser()
 
 
 class DatabaseConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: DatabaseType = DatabaseType.SQLITE
+
     path: Path
 
     @field_validator("path")
     @classmethod
-    def validate_path(cls, value: Path) -> Path:
+    def validate_path(
+        cls,
+        value: Path,
+    ) -> Path:
         return value.expanduser()
 
 
@@ -91,11 +119,15 @@ class MediaConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
+
     path: Path
 
     @field_validator("path")
     @classmethod
-    def validate_path(cls, value: Path) -> Path:
+    def validate_path(
+        cls,
+        value: Path,
+    ) -> Path:
         return value.expanduser()
 
 
@@ -103,7 +135,12 @@ class ScheduleConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    interval: int = Field(default=6, ge=1)
+
+    interval: int = Field(
+        default=6,
+        ge=1,
+    )
+
     unit: ScheduleUnit = ScheduleUnit.HOURS
 
 
@@ -130,6 +167,19 @@ class ProjectConfig(BaseModel):
         default_factory=ScheduleConfig,
     )
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = value.strip()
+
+        if not normalized:
+            raise ValueError("Project name cannot be empty.")
+
+        return normalized
+
 
 class AppConfig(BaseModel):
     model_config = ConfigDict(
@@ -137,17 +187,30 @@ class AppConfig(BaseModel):
         validate_assignment=True,
     )
 
-    version: int = Field(default=1, ge=1)
+    version: int = Field(
+        default=1,
+        ge=1,
+    )
 
-    bot: BotConfig = Field(default_factory=BotConfig)
+    bot: BotConfig = Field(
+        default_factory=BotConfig,
+    )
 
-    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
+    telegram: TelegramConfig = Field(
+        default_factory=TelegramConfig,
+    )
 
-    admins: list[int] = Field(default_factory=list)
+    admins: list[int] = Field(
+        default_factory=list,
+    )
 
-    backup: BackupConfig = Field(default_factory=BackupConfig)
+    backup: BackupConfig = Field(
+        default_factory=BackupConfig,
+    )
 
-    projects: list[ProjectConfig] = Field(default_factory=list)
+    projects: list[ProjectConfig] = Field(
+        default_factory=list,
+    )
 
     @field_validator("admins")
     @classmethod
@@ -167,5 +230,10 @@ class AppConfig(BaseModel):
 
         if len(project_ids) != len(set(project_ids)):
             raise ValueError("Project IDs must be unique.")
+
+        project_names = [project.name.casefold() for project in value]
+
+        if len(project_names) != len(set(project_names)):
+            raise ValueError("Project names must be unique.")
 
         return value
