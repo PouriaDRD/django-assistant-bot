@@ -1,0 +1,75 @@
+[build-system]
+requires = [
+    "setuptools>=75",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "django-assistant-bot"
+version = "0.1.0"
+description = "Telegram-based backup and management assistant for Django projects."
+requires-python = ">=3.13"
+
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+
+[tool.setuptools.packages.find]
+where = [
+    "src",
+]
+
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+
+testpaths = [
+    "tests",
+]
+
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--import-mode=importlib",
+]
+
+python_files = [
+    "test_*.py",
+]
+
+python_classes = [
+    "Test*",
+]
+
+python_functions = [
+    "test_*",
+]
+
+
+[tool.coverage.run]
+branch = true
+
+source = [
+    "django_assistant_bot",
+]
+
+omit = [
+    "tests/*",
+    "alembic/*",
+]
+
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+precision = 2
+
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
