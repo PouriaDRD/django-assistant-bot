@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from aiogram import Router
 
+from django_assistant_bot.bot.handlers.projects.backup import (
+    router as backup_router,
+)
 from django_assistant_bot.bot.handlers.projects.create import (
     router as create_router,
 )
@@ -25,6 +28,7 @@ router = Router(
     name="projects",
 )
 
+
 router.include_router(
     menu_router,
 )
@@ -42,12 +46,17 @@ router.include_router(
 )
 
 router.include_router(
+    backup_router,
+)
+
+router.include_router(
     status_router,
 )
 
 router.include_router(
     delete_router,
 )
+
 
 __all__ = [
     "router",

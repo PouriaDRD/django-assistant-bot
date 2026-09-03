@@ -18,6 +18,7 @@ data/*.sqlite3-wal
 
 # Backups
 backups/
+!src/django_assistant_bot/bot/handlers/backups/
 
 # Logs
 logs/

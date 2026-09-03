@@ -8,7 +8,9 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import (
     MemoryStorage,
 )
-
+from django_assistant_bot.bot.handlers.backups import (
+    router as backups_router,
+)
 from django_assistant_bot.bot.context import ApplicationContext
 from django_assistant_bot.bot.handlers.common import (
     router as common_router,
@@ -75,6 +77,10 @@ class TelegramBot:
 
         self._dispatcher.include_router(
             common_router,
+        )
+
+        self._dispatcher.include_router(
+            backups_router,
         )
 
         self._dispatcher.include_router(

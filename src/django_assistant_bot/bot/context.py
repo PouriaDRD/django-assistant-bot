@@ -2,10 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from django_assistant_bot.core.environment import EnvironmentSettings
-from django_assistant_bot.services.admin import AdminService
-from django_assistant_bot.services.project import ProjectService
-from django_assistant_bot.services.settings import AppSettingsService
+from django_assistant_bot.core.environment import (
+    EnvironmentSettings,
+)
+from django_assistant_bot.services.admin import (
+    AdminService,
+)
+from django_assistant_bot.services.backup import (
+    BackupCoordinator,
+)
+from django_assistant_bot.services.project import (
+    ProjectService,
+)
+from django_assistant_bot.services.settings import (
+    AppSettingsService,
+)
 
 
 @dataclass(
@@ -28,3 +39,5 @@ class ApplicationContext:
     admins: AdminService
 
     settings: AppSettingsService
+
+    backups: BackupCoordinator

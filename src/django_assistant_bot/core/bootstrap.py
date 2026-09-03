@@ -4,21 +4,37 @@ from dataclasses import dataclass
 
 from sqlalchemy import Engine
 
-from django_assistant_bot.bot.context import ApplicationContext
+from django_assistant_bot.bot.context import (
+    ApplicationContext,
+)
 from django_assistant_bot.core.environment import (
     EnvironmentManager,
     EnvironmentSettings,
 )
-from django_assistant_bot.database.engine import create_database_engine
-from django_assistant_bot.database.session import SessionManager
+from django_assistant_bot.database.engine import (
+    create_database_engine,
+)
+from django_assistant_bot.database.session import (
+    SessionManager,
+)
 from django_assistant_bot.repositories import (
     AdminRepository,
     AppSettingsRepository,
+    BackupHistoryRepository,
     ProjectRepository,
 )
-from django_assistant_bot.services.admin import AdminService
-from django_assistant_bot.services.project import ProjectService
-from django_assistant_bot.services.settings import AppSettingsService
+from django_assistant_bot.services.admin import (
+    AdminService,
+)
+from django_assistant_bot.services.backup import (
+    BackupCoordinator,
+)
+from django_assistant_bot.services.project import (
+    ProjectService,
+)
+from django_assistant_bot.services.settings import (
+    AppSettingsService,
+)
 
 
 @dataclass(
@@ -53,10 +69,20 @@ def bootstrap_application() -> ApplicationBootstrap:
             ↓
         Services
             ↓
+        BackupCoordinator
+            ↓
         ApplicationContext
     """
 
+    # -----------------------------------------------------
+    # ENVIRONMENT
+    # -----------------------------------------------------
+
     environment = EnvironmentManager().load()
+
+    # -----------------------------------------------------
+    # DATABASE
+    # -----------------------------------------------------
 
     engine = create_database_engine(
         environment,
@@ -65,6 +91,10 @@ def bootstrap_application() -> ApplicationBootstrap:
     sessions = SessionManager(
         engine,
     )
+
+    # -----------------------------------------------------
+    # REPOSITORIES
+    # -----------------------------------------------------
 
     project_repository = ProjectRepository(
         sessions,
@@ -78,6 +108,14 @@ def bootstrap_application() -> ApplicationBootstrap:
         sessions,
     )
 
+    backup_history_repository = BackupHistoryRepository(
+        sessions,
+    )
+
+    # -----------------------------------------------------
+    # SERVICES
+    # -----------------------------------------------------
+
     project_service = ProjectService(
         project_repository,
     )
@@ -90,16 +128,35 @@ def bootstrap_application() -> ApplicationBootstrap:
         settings_repository,
     )
 
+    # -----------------------------------------------------
+    # BACKUP ORCHESTRATION
+    # -----------------------------------------------------
+
+    backup_coordinator = BackupCoordinator(
+        projects=project_service,
+        settings=settings_service,
+        history=backup_history_repository,
+    )
+
+    # -----------------------------------------------------
+    # BOOTSTRAP ADMINS
+    # -----------------------------------------------------
+
     _bootstrap_admins(
         admin_service=admin_service,
         environment=environment,
     )
+
+    # -----------------------------------------------------
+    # APPLICATION CONTEXT
+    # -----------------------------------------------------
 
     context = ApplicationContext(
         environment=environment,
         projects=project_service,
         admins=admin_service,
         settings=settings_service,
+        backups=backup_coordinator,
     )
 
     return ApplicationBootstrap(

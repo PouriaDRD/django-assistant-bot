@@ -12,10 +12,13 @@ from django_assistant_bot.schemas.project import ProjectSchema
 from django_assistant_bot.services.backup.archive import ArchiveService
 from django_assistant_bot.services.backup.checksum import ChecksumService
 from django_assistant_bot.services.backup.database import SQLiteBackup
-from django_assistant_bot.services.backup.exceptions import BackupError
 from django_assistant_bot.services.backup.media import MediaCollector
 from django_assistant_bot.services.backup.models import BackupResult
 from django_assistant_bot.services.backup.retention import RetentionService
+from django_assistant_bot.services.backup.exceptions import (
+    BackupError,
+    ProjectBackupDisabledError,
+)
 
 
 class BackupService:
@@ -186,7 +189,7 @@ class BackupService:
         """
 
         if not project.enabled:
-            raise BackupError("Project is disabled: " f"{project.name}")
+            raise ProjectBackupDisabledError("Project is disabled: " f"{project.name}")
 
         if project.database.type is not DatabaseType.SQLITE:
             raise BackupError("Only SQLite databases are " "currently supported.")
