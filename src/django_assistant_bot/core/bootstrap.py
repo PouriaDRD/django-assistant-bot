@@ -28,6 +28,7 @@ from django_assistant_bot.services.admin import (
 )
 from django_assistant_bot.services.backup import (
     BackupCoordinator,
+    BackupHistoryService,
 )
 from django_assistant_bot.services.project import (
     ProjectService,
@@ -128,6 +129,10 @@ def bootstrap_application() -> ApplicationBootstrap:
         settings_repository,
     )
 
+    backup_history_service = BackupHistoryService(
+        backup_history_repository,
+    )
+
     # -----------------------------------------------------
     # BACKUP ORCHESTRATION
     # -----------------------------------------------------
@@ -157,6 +162,7 @@ def bootstrap_application() -> ApplicationBootstrap:
         admins=admin_service,
         settings=settings_service,
         backups=backup_coordinator,
+        backup_history=backup_history_service,
     )
 
     return ApplicationBootstrap(

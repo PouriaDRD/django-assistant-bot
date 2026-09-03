@@ -6,6 +6,8 @@ from aiogram import (
 )
 from aiogram.types import (
     CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
     Message,
 )
 
@@ -29,6 +31,56 @@ async def backup_menu_callback(
     context: ApplicationContext,
 ) -> None:
     """
+    Display backup management menu.
+    """
+
+    del context
+
+    await callback.answer()
+
+    if not isinstance(
+        callback.message,
+        Message,
+    ):
+        return
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📦 تهیه بکاپ",
+                    callback_data="backup:create",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🕘 تاریخچه بکاپ‌ها",
+                    callback_data="backup:history",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت",
+                    callback_data="main:menu",
+                )
+            ],
+        ]
+    )
+
+    await callback.message.edit_text(
+        "💾 <b>مدیریت بکاپ</b>\n" "\n" "عملیات مورد نظر را انتخاب کنید.",
+        reply_markup=keyboard,
+    )
+
+
+@router.callback_query(
+    F.data == "backup:create",
+)
+async def backup_create_menu_callback(
+    callback: CallbackQuery,
+    context: ApplicationContext,
+) -> None:
+    """
     Display projects available for manual backup.
     """
 
@@ -44,12 +96,7 @@ async def backup_menu_callback(
 
     if not projects:
         await callback.message.edit_text(
-            "💾 <b>بکاپ</b>\n"
-            "\n"
-            "هنوز هیچ پروژه‌ای ثبت نشده است.\n"
-            "\n"
-            "ابتدا از بخش پروژه‌ها یک پروژه "
-            "اضافه کنید.",
+            "💾 <b>تهیه بکاپ</b>\n" "\n" "هنوز هیچ پروژه‌ای ثبت نشده است.",
             reply_markup=(
                 backup_projects_keyboard(
                     projects,
@@ -68,10 +115,7 @@ async def backup_menu_callback(
         "\n"
         f"🟢 فعال: <b>{active_count}</b>\n"
         f"🔴 غیرفعال: "
-        f"<b>{len(projects) - active_count}</b>\n"
-        "\n"
-        "پروژه‌های غیرفعال امکان تهیه بکاپ "
-        "ندارند.",
+        f"<b>{len(projects) - active_count}</b>",
         reply_markup=(
             backup_projects_keyboard(
                 projects,

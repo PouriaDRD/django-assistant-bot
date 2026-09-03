@@ -8,6 +8,7 @@ from django_assistant_bot.services.admin import (
 )
 from django_assistant_bot.services.backup import (
     BackupCoordinator,
+    BackupHistoryService,
 )
 from django_assistant_bot.services.project import (
     ProjectService,
@@ -41,6 +42,11 @@ def test_application_bootstrap() -> None:
         assert isinstance(
             bootstrap.context.backups,
             BackupCoordinator,
+        )
+
+        assert isinstance(
+            bootstrap.context.backup_history,
+            BackupHistoryService,
         )
 
     finally:

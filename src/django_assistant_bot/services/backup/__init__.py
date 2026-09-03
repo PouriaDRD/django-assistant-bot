@@ -31,6 +31,15 @@ from django_assistant_bot.services.backup.models import (
 from django_assistant_bot.services.backup.service import (
     BackupService,
 )
+from django_assistant_bot.services.backup.history import (
+    BackupHistoryService,
+)
+from django_assistant_bot.services.backup.history_exceptions import (
+    BackupHistoryNotFoundError,
+    BackupHistoryPersistenceError,
+    BackupHistoryServiceError,
+    BackupHistoryValidationError,
+)
 
 __all__ = [
     "ArchiveError",
@@ -54,4 +63,9 @@ __all__ = [
     "MediaBackupError",
     "MediaBackupResult",
     "RetentionError",
+    "BackupHistoryNotFoundError",
+    "BackupHistoryPersistenceError",
+    "BackupHistoryService",
+    "BackupHistoryServiceError",
+    "BackupHistoryValidationError",
 ]

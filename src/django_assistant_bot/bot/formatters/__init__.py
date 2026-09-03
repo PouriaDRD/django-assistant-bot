@@ -15,6 +15,12 @@ from django_assistant_bot.bot.formatters.project import (
     format_schedule,
 )
 
+from django_assistant_bot.bot.formatters.backup_history import (
+    format_backup_history_details,
+    format_backup_history_list,
+    format_backup_history_menu,
+)
+
 __all__ = [
     "escape_html",
     "format_backup_failed",
@@ -26,4 +32,7 @@ __all__ = [
     "format_project_details",
     "format_project_list",
     "format_schedule",
+    "format_backup_history_details",
+    "format_backup_history_list",
+    "format_backup_history_menu",
 ]

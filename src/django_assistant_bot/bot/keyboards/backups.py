@@ -17,31 +17,34 @@ def backup_projects_keyboard(
     Build project selection keyboard for manual backups.
     """
 
-    buttons: list[list[InlineKeyboardButton]] = []
+    rows: list[list[InlineKeyboardButton]] = []
 
     for project in projects:
-        status = "🟢" if project.enabled else "🔴"
+        status_icon = "🟢" if project.enabled else "🔴"
 
-        label = f"{status} {project.name}"
-
-        buttons.append(
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text=label,
+                    text=(f"{status_icon} " f"{project.name}"),
                     callback_data=("project:backup:" f"{project.id}"),
                 )
             ]
         )
 
-    buttons.append(
+    rows.append(
         [
             InlineKeyboardButton(
                 text="🔙 بازگشت",
-                callback_data="main:menu",
+                callback_data="backup",
             )
         ]
     )
 
     return InlineKeyboardMarkup(
-        inline_keyboard=buttons,
+        inline_keyboard=rows,
     )
+
+
+__all__ = [
+    "backup_projects_keyboard",
+]

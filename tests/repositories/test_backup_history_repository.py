@@ -6,6 +6,7 @@ from pathlib import Path
 from django_assistant_bot.database.models.enums import (
     BackupStatus,
     ScheduleUnit,
+    DatabaseType,
 )
 from django_assistant_bot.database.session import SessionManager
 from django_assistant_bot.repositories.backup_history import (
@@ -131,3 +132,65 @@ def test_list_backup_history_for_project(
     )
 
     assert len(histories) == 2
+
+
+def test_get_backup_history_by_id(
+    session_manager: SessionManager,
+) -> None:
+    project_repository = ProjectRepository(
+        session_manager,
+    )
+
+    history_repository = BackupHistoryRepository(
+        session_manager,
+    )
+
+    project = project_repository.create(
+        ProjectCreateSchema(
+            name="History Project",
+            database=DatabaseSchema(
+                type=DatabaseType.SQLITE,
+                path=Path("C:/absolute/db.sqlite3"),
+            ),
+            media=MediaSchema(
+                enabled=False,
+                path=Path("C:/absolute/media"),
+            ),
+            schedule=ScheduleSchema(
+                enabled=False,
+                interval=1,
+                unit=ScheduleUnit.DAYS,
+            ),
+        )
+    )
+
+    now = datetime.now(
+        timezone.utc,
+    )
+
+    created = history_repository.create(
+        BackupHistoryCreateSchema(
+            project_id=project.id,
+            status=BackupStatus.SUCCESS,
+            started_at=now,
+            finished_at=now,
+        )
+    )
+
+    loaded = history_repository.get_by_id(
+        created.id,
+    )
+
+    assert loaded is not None
+
+    assert loaded.id == created.id
+
+
+def test_get_unknown_backup_history_returns_none(
+    session_manager: SessionManager,
+) -> None:
+    repository = BackupHistoryRepository(
+        session_manager,
+    )
+
+    assert repository.get_by_id("unknown") is None

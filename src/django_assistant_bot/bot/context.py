@@ -10,6 +10,7 @@ from django_assistant_bot.services.admin import (
 )
 from django_assistant_bot.services.backup import (
     BackupCoordinator,
+    BackupHistoryService,
 )
 from django_assistant_bot.services.project import (
     ProjectService,
@@ -41,3 +42,5 @@ class ApplicationContext:
     settings: AppSettingsService
 
     backups: BackupCoordinator
+
+    backup_history: BackupHistoryService

@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from django_assistant_bot.database.models.backup_history import (
     BackupHistoryModel,
 )
-from django_assistant_bot.database.session import SessionManager
+from django_assistant_bot.database.session import (
+    SessionManager,
+)
 from django_assistant_bot.repositories.exceptions import (
     PersistenceError,
 )
@@ -20,11 +21,19 @@ from django_assistant_bot.schemas.backup import (
 
 
 class BackupHistoryRepository:
+    """
+    Persistence layer for backup history records.
+    """
+
     def __init__(
         self,
         sessions: SessionManager,
     ) -> None:
         self._sessions = sessions
+
+    # -----------------------------------------------------
+    # CREATE
+    # -----------------------------------------------------
 
     def create(
         self,
@@ -49,25 +58,77 @@ class BackupHistoryRepository:
 
         try:
             with self._sessions.transaction() as session:
-                session.add(model)
+                session.add(
+                    model,
+                )
+
                 session.flush()
 
-                history = self._to_schema(model)
+                history = self._to_schema(
+                    model,
+                )
 
             return history
 
         except SQLAlchemyError as exc:
             raise PersistenceError("Could not create backup history.") from exc
 
+    # -----------------------------------------------------
+    # GET
+    # -----------------------------------------------------
+
+    def get_by_id(
+        self,
+        history_id: str,
+    ) -> BackupHistorySchema | None:
+        """
+        Return a backup history record by ID.
+        """
+
+        try:
+            with self._sessions.session() as session:
+                statement = select(BackupHistoryModel).where(
+                    BackupHistoryModel.id == history_id
+                )
+
+                model = session.scalars(statement).first()
+
+                if model is None:
+                    return None
+
+                return self._to_schema(
+                    model,
+                )
+
+        except SQLAlchemyError as exc:
+            raise PersistenceError("Could not load backup history.") from exc
+
+    # -----------------------------------------------------
+    # LIST
+    # -----------------------------------------------------
+
     def list_for_project(
         self,
         project_id: str,
         *,
         limit: int = 50,
+        offset: int = 0,
     ) -> list[BackupHistorySchema]:
+        """
+        Return project backup history ordered newest first.
+        """
+
         safe_limit = max(
             1,
-            min(limit, 500),
+            min(
+                limit,
+                500,
+            ),
+        )
+
+        safe_offset = max(
+            0,
+            offset,
         )
 
         try:
@@ -76,15 +137,25 @@ class BackupHistoryRepository:
                     select(BackupHistoryModel)
                     .where(BackupHistoryModel.project_id == project_id)
                     .order_by(BackupHistoryModel.started_at.desc())
+                    .offset(safe_offset)
                     .limit(safe_limit)
                 )
 
                 models = list(session.scalars(statement))
 
-                return [self._to_schema(model) for model in models]
+                return [
+                    self._to_schema(
+                        model,
+                    )
+                    for model in models
+                ]
 
         except SQLAlchemyError as exc:
             raise PersistenceError("Could not load backup history.") from exc
+
+    # -----------------------------------------------------
+    # MAPPING
+    # -----------------------------------------------------
 
     @staticmethod
     def _to_schema(
@@ -104,6 +175,6 @@ class BackupHistoryRepository:
             checksum_algorithm=(model.checksum_algorithm),
             checksum_value=(model.checksum_value),
             error_message=(model.error_message),
-            started_at=model.started_at,
-            finished_at=model.finished_at,
+            started_at=(model.started_at),
+            finished_at=(model.finished_at),
         )
