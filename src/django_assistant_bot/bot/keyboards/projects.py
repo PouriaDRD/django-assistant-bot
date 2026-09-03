@@ -5,10 +5,34 @@ from aiogram.types import (
     InlineKeyboardMarkup,
 )
 
-from django_assistant_bot.schemas.project import ProjectSchema
+from django_assistant_bot.schemas.project import (
+    ProjectSchema,
+)
+
+# =========================================================
+# CALLBACKS
+# =========================================================
+
+
+PROJECTS_MENU_CALLBACK = "projects"
+PROJECT_LIST_CALLBACK = "project:list"
+MAIN_MENU_CALLBACK = "main:menu"
+
+
+# =========================================================
+# PROJECTS MENU
+# =========================================================
 
 
 def projects_menu_keyboard() -> InlineKeyboardMarkup:
+    """
+    Build the main project-management keyboard.
+
+    Navigation:
+        Main Menu
+        └── Projects Menu
+    """
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -20,37 +44,53 @@ def projects_menu_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="📋 لیست پروژه‌ها",
-                    callback_data="project:list",
+                    callback_data=PROJECT_LIST_CALLBACK,
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="🔙 بازگشت",
-                    callback_data="main:menu",
+                    callback_data=MAIN_MENU_CALLBACK,
                 ),
             ],
         ],
     )
 
 
+# =========================================================
+# PROJECT LIST
+# =========================================================
+
+
 def project_list_keyboard(
     projects: list[ProjectSchema],
 ) -> InlineKeyboardMarkup:
-    buttons: list[list[InlineKeyboardButton]] = []
+    """
+    Build project-list keyboard.
+
+    Navigation:
+        Projects Menu
+        └── Project List
+
+    The back button must return to the projects menu,
+    not directly to the application main menu.
+    """
+
+    rows: list[list[InlineKeyboardButton]] = []
 
     for project in projects:
-        status = "🟢" if project.enabled else "🔴"
+        status_icon = "🟢" if project.enabled else "🔴"
 
-        buttons.append(
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text=(f"{status} " f"{project.name}"),
+                    text=(f"{status_icon} " f"{project.name}"),
                     callback_data=("project:view:" f"{project.id}"),
                 ),
             ]
         )
 
-    buttons.append(
+    rows.append(
         [
             InlineKeyboardButton(
                 text="➕ افزودن پروژه",
@@ -59,24 +99,38 @@ def project_list_keyboard(
         ]
     )
 
-    buttons.append(
+    rows.append(
         [
             InlineKeyboardButton(
                 text="🔙 بازگشت",
-                callback_data="main:menu",
+                callback_data=PROJECTS_MENU_CALLBACK,
             ),
         ]
     )
 
     return InlineKeyboardMarkup(
-        inline_keyboard=buttons,
+        inline_keyboard=rows,
     )
+
+
+# =========================================================
+# PROJECT DETAILS
+# =========================================================
 
 
 def project_details_keyboard(
     project_id: str,
     enabled: bool,
 ) -> InlineKeyboardMarkup:
+    """
+    Build project-details keyboard.
+
+    Navigation:
+        Projects Menu
+        └── Project List
+            └── Project Details
+    """
+
     toggle_button = (
         InlineKeyboardButton(
             text="🔴 غیرفعال کردن",
@@ -108,34 +162,52 @@ def project_details_keyboard(
             ],
             [
                 InlineKeyboardButton(
-                    text="🔙 پروژه‌ها",
-                    callback_data="project:list",
+                    text="🔙 بازگشت",
+                    callback_data=PROJECT_LIST_CALLBACK,
                 ),
             ],
         ],
     )
 
 
+# =========================================================
+# PROJECT CREATION CONFIRMATION
+# =========================================================
+
+
 def project_confirmation_keyboard() -> InlineKeyboardMarkup:
+    """
+    Build project-creation confirmation keyboard.
+    """
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="✅ تأیید و ایجاد",
-                    callback_data=("project:create:confirm"),
+                    callback_data="project:create:confirm",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="❌ لغو",
-                    callback_data=("project:create:cancel"),
+                    callback_data="project:create:cancel",
                 ),
             ],
         ],
     )
 
 
+# =========================================================
+# PROJECT SCHEDULE
+# =========================================================
+
+
 def schedule_keyboard() -> InlineKeyboardMarkup:
+    """
+    Build predefined project backup schedule options.
+    """
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -176,3 +248,15 @@ def schedule_keyboard() -> InlineKeyboardMarkup:
             ],
         ],
     )
+
+
+__all__ = [
+    "MAIN_MENU_CALLBACK",
+    "PROJECT_LIST_CALLBACK",
+    "PROJECTS_MENU_CALLBACK",
+    "project_confirmation_keyboard",
+    "project_details_keyboard",
+    "project_list_keyboard",
+    "projects_menu_keyboard",
+    "schedule_keyboard",
+]
