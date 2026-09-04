@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from django_assistant_bot.repositories.exceptions import (
     DuplicateEntityError,
     EntityNotFoundError,
@@ -9,6 +11,7 @@ from django_assistant_bot.repositories.project import (
     ProjectRepository,
 )
 from django_assistant_bot.schemas.project import (
+    MediaSchema,
     ProjectCreateSchema,
     ProjectSchema,
     ProjectUpdateSchema,
@@ -28,10 +31,17 @@ class ProjectService:
 
     The service does not know anything about:
     - SQLAlchemy sessions
-    - SQLite
+    - SQLite implementation details
     - Telegram
     - Scheduler infrastructure
     - JSON configuration
+
+    Filesystem paths are validated before project
+    configuration is persisted.
+
+    BackupService still validates paths again at execution
+    time because configured files/directories may disappear
+    after project creation.
     """
 
     def __init__(
@@ -39,6 +49,10 @@ class ProjectService:
         repository: ProjectRepository,
     ) -> None:
         self._repository = repository
+
+    # =====================================================
+    # READ
+    # =====================================================
 
     def list_projects(
         self,
@@ -71,14 +85,22 @@ class ProjectService:
 
         return project
 
+    # =====================================================
+    # CREATE
+    # =====================================================
+
     def create_project(
         self,
         data: ProjectCreateSchema,
     ) -> ProjectSchema:
-        self._validate_create_data(data)
+        self._validate_create_data(
+            data,
+        )
 
         try:
-            return self._repository.create(data)
+            return self._repository.create(
+                data,
+            )
 
         except DuplicateEntityError as exc:
             raise ProjectAlreadyExistsError(
@@ -87,6 +109,10 @@ class ProjectService:
 
         except PersistenceError as exc:
             raise ProjectPersistenceError("Could not create project.") from exc
+
+    # =====================================================
+    # UPDATE
+    # =====================================================
 
     def update_project(
         self,
@@ -98,7 +124,9 @@ class ProjectService:
         if not normalized_id:
             raise ProjectValidationError("Project ID cannot be empty.")
 
-        self._validate_update_data(data)
+        self._validate_update_data(
+            data,
+        )
 
         try:
             return self._repository.update(
@@ -116,6 +144,10 @@ class ProjectService:
 
         except PersistenceError as exc:
             raise ProjectPersistenceError("Could not update project.") from exc
+
+    # =====================================================
+    # SCHEDULE
+    # =====================================================
 
     def update_schedule(
         self,
@@ -164,6 +196,10 @@ class ProjectService:
             ),
         )
 
+    # =====================================================
+    # STATUS
+    # =====================================================
+
     def set_enabled(
         self,
         project_id: str,
@@ -186,6 +222,10 @@ class ProjectService:
         except PersistenceError as exc:
             raise ProjectPersistenceError("Could not update project status.") from exc
 
+    # =====================================================
+    # DELETE
+    # =====================================================
+
     def delete_project(
         self,
         project_id: str,
@@ -196,7 +236,9 @@ class ProjectService:
             raise ProjectValidationError("Project ID cannot be empty.")
 
         try:
-            return self._repository.delete(normalized_id)
+            return self._repository.delete(
+                normalized_id,
+            )
 
         except EntityNotFoundError as exc:
             raise ProjectNotFoundError(f"Project not found: {normalized_id}") from exc
@@ -204,22 +246,87 @@ class ProjectService:
         except PersistenceError as exc:
             raise ProjectPersistenceError("Could not delete project.") from exc
 
-    @staticmethod
+    # =====================================================
+    # PROJECT VALIDATION
+    # =====================================================
+
+    @classmethod
     def _validate_create_data(
+        cls,
         data: ProjectCreateSchema,
     ) -> None:
-        if not data.database.path.is_absolute():
-            raise ProjectValidationError("Database path must be absolute.")
+        cls._validate_database_path(
+            data.database.path,
+        )
 
-        if not data.media.path.is_absolute():
-            raise ProjectValidationError("Media path must be absolute.")
+        cls._validate_media(
+            data.media,
+        )
 
-    @staticmethod
+    @classmethod
     def _validate_update_data(
+        cls,
         data: ProjectUpdateSchema,
     ) -> None:
-        if data.database is not None and not data.database.path.is_absolute():
+        if data.database is not None:
+            cls._validate_database_path(
+                data.database.path,
+            )
+
+        if data.media is not None:
+            cls._validate_media(
+                data.media,
+            )
+
+    # =====================================================
+    # PATH VALIDATION
+    # =====================================================
+
+    @staticmethod
+    def _validate_database_path(
+        path: Path,
+    ) -> None:
+        """
+        Validate a configured SQLite database path.
+        """
+
+        if not path.is_absolute():
             raise ProjectValidationError("Database path must be absolute.")
 
-        if data.media is not None and not data.media.path.is_absolute():
+        if not path.exists():
+            raise ProjectValidationError("Database file does not exist.")
+
+        if not path.is_file():
+            raise ProjectValidationError("Database path must point to a file.")
+
+    @staticmethod
+    def _validate_media(
+        media: MediaSchema,
+    ) -> None:
+        """
+        Validate a configured media directory.
+
+        Disabled media still requires an absolute path so
+        the persisted configuration remains well-formed,
+        but the directory is not required to currently
+        exist.
+        """
+
+        path = media.path
+
+        if not path.is_absolute():
             raise ProjectValidationError("Media path must be absolute.")
+
+        if not media.enabled:
+            return
+
+        if not path.exists():
+            raise ProjectValidationError("Media directory does not exist.")
+
+        if not path.is_dir():
+            raise ProjectValidationError("Media path must point to a directory.")
+
+
+__all__ = [
+    "ProjectService",
+]

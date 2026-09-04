@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from html import escape
 from pathlib import Path
 from typing import Final
 
@@ -12,7 +13,9 @@ from aiogram.types import (
 )
 from pydantic import ValidationError
 
-from django_assistant_bot.bot.context import ApplicationContext
+from django_assistant_bot.bot.context import (
+    ApplicationContext,
+)
 from django_assistant_bot.bot.formatters.project import (
     format_project_confirmation,
     format_project_created,
@@ -22,7 +25,9 @@ from django_assistant_bot.bot.keyboards.projects import (
     projects_menu_keyboard,
     schedule_keyboard,
 )
-from django_assistant_bot.bot.states.project import ProjectCreationState
+from django_assistant_bot.bot.states.project import (
+    ProjectCreationState,
+)
 from django_assistant_bot.database.models.enums import (
     DatabaseType,
     ScheduleUnit,
@@ -39,13 +44,37 @@ from django_assistant_bot.services.project import (
     ProjectValidationError,
 )
 
+# =========================================================
+# ROUTER
+# =========================================================
+
+
 router = Router(
     name="projects.create",
 )
 
-logger = logging.getLogger(__name__)
+
+# =========================================================
+# LOGGER
+# =========================================================
+
+
+logger = logging.getLogger(
+    __name__,
+)
+
+
+# =========================================================
+# CONSTANTS
+# =========================================================
+
 
 PROJECT_NAME_MAX_LENGTH: Final[int] = 200
+
+
+# =========================================================
+# START CREATION
+# =========================================================
 
 
 async def start_project_creation(
@@ -94,6 +123,11 @@ async def project_create_callback(
     )
 
 
+# =========================================================
+# PROJECT NAME
+# =========================================================
+
+
 @router.message(
     ProjectCreationState.waiting_for_name,
 )
@@ -134,6 +168,11 @@ async def project_name_handler(
     )
 
 
+# =========================================================
+# DATABASE PATH
+# =========================================================
+
+
 @router.message(
     ProjectCreationState.waiting_for_database_path,
 )
@@ -144,13 +183,39 @@ async def project_database_handler(
     raw_path = (message.text or "").strip()
 
     if not raw_path:
-        await message.answer("❌ مسیر دیتابیس نمی‌تواند " "خالی باشد.")
+        await message.answer("❌ مسیر دیتابیس نمی‌تواند خالی باشد.")
         return
 
     path = Path(raw_path).expanduser()
 
     if not path.is_absolute():
-        await message.answer("❌ مسیر باید کامل و Absolute باشد.")
+        await message.answer("❌ مسیر دیتابیس باید کامل و Absolute باشد.")
+        return
+
+    # Only escape the path used for Telegram HTML output.
+    # The real filesystem path remains unchanged.
+    safe_path = escape(str(path))
+
+    if not path.exists():
+        await message.answer(
+            "❌ <b>فایل دیتابیس پیدا نشد.</b>\n"
+            "\n"
+            "مسیر واردشده:\n"
+            f"<code>{safe_path}</code>\n"
+            "\n"
+            "مسیر صحیح فایل SQLite را دوباره وارد کنید."
+        )
+        return
+
+    if not path.is_file():
+        await message.answer(
+            "❌ <b>مسیر دیتابیس معتبر نیست.</b>\n"
+            "\n"
+            "مسیر واردشده به فایل اشاره نمی‌کند:\n"
+            f"<code>{safe_path}</code>\n"
+            "\n"
+            "مسیر کامل فایل SQLite را وارد کنید."
+        )
         return
 
     await state.update_data(
@@ -166,6 +231,11 @@ async def project_database_handler(
     )
 
 
+# =========================================================
+# MEDIA PATH
+# =========================================================
+
+
 @router.message(
     ProjectCreationState.waiting_for_media_path,
 )
@@ -176,13 +246,39 @@ async def project_media_handler(
     raw_path = (message.text or "").strip()
 
     if not raw_path:
-        await message.answer("❌ مسیر Media نمی‌تواند " "خالی باشد.")
+        await message.answer("❌ مسیر Media نمی‌تواند خالی باشد.")
         return
 
     path = Path(raw_path).expanduser()
 
     if not path.is_absolute():
-        await message.answer("❌ مسیر باید کامل و Absolute باشد.")
+        await message.answer("❌ مسیر Media باید کامل و Absolute باشد.")
+        return
+
+    # Only escape the path used for Telegram HTML output.
+    # The real filesystem path remains unchanged.
+    safe_path = escape(str(path))
+
+    if not path.exists():
+        await message.answer(
+            "❌ <b>پوشه Media پیدا نشد.</b>\n"
+            "\n"
+            "مسیر واردشده:\n"
+            f"<code>{safe_path}</code>\n"
+            "\n"
+            "مسیر صحیح پوشه Media را دوباره وارد کنید."
+        )
+        return
+
+    if not path.is_dir():
+        await message.answer(
+            "❌ <b>مسیر Media معتبر نیست.</b>\n"
+            "\n"
+            "مسیر واردشده به پوشه اشاره نمی‌کند:\n"
+            f"<code>{safe_path}</code>\n"
+            "\n"
+            "مسیر کامل پوشه Media را وارد کنید."
+        )
         return
 
     await state.update_data(
@@ -200,6 +296,11 @@ async def project_media_handler(
         "یک‌بار انجام شود؟",
         reply_markup=schedule_keyboard(),
     )
+
+
+# =========================================================
+# SCHEDULE
+# =========================================================
 
 
 @router.callback_query(
@@ -259,9 +360,18 @@ async def project_schedule_handler(
     media_path = data.get("media_path")
 
     if (
-        not isinstance(project_name, str)
-        or not isinstance(database_path, str)
-        or not isinstance(media_path, str)
+        not isinstance(
+            project_name,
+            str,
+        )
+        or not isinstance(
+            database_path,
+            str,
+        )
+        or not isinstance(
+            media_path,
+            str,
+        )
     ):
         await state.clear()
 
@@ -292,6 +402,11 @@ async def project_schedule_handler(
         ),
         reply_markup=(project_confirmation_keyboard()),
     )
+
+
+# =========================================================
+# CONFIRM CREATION
+# =========================================================
 
 
 @router.callback_query(
@@ -397,9 +512,9 @@ async def project_create_confirm(
         )
         return
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
     # SCHEDULER SYNC
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     try:
         context.scheduler.sync_project(
@@ -408,7 +523,7 @@ async def project_create_confirm(
 
     except Exception:
         logger.exception(
-            "Project %s was created but scheduler sync failed.",
+            "Project %s was created but " "scheduler sync failed.",
             project.id,
         )
 
@@ -426,6 +541,11 @@ async def project_create_confirm(
         format_project_created(project),
         reply_markup=(projects_menu_keyboard()),
     )
+
+
+# =========================================================
+# CANCEL CREATION
+# =========================================================
 
 
 @router.callback_query(
@@ -450,3 +570,9 @@ async def project_create_cancel(
         "❌ ایجاد پروژه لغو شد.",
         reply_markup=(projects_menu_keyboard()),
     )
+
+
+__all__ = [
+    "router",
+    "start_project_creation",
+]

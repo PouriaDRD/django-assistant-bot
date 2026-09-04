@@ -8,12 +8,16 @@ from django_assistant_bot.database.models.enums import (
     DatabaseType,
     ScheduleUnit,
 )
-from django_assistant_bot.database.session import SessionManager
+from django_assistant_bot.database.session import (
+    SessionManager,
+)
 from django_assistant_bot.repositories.exceptions import (
     DuplicateEntityError,
     EntityNotFoundError,
 )
-from django_assistant_bot.repositories.project import ProjectRepository
+from django_assistant_bot.repositories.project import (
+    ProjectRepository,
+)
 from django_assistant_bot.schemas.project import (
     DatabaseSchema,
     MediaSchema,
@@ -21,6 +25,10 @@ from django_assistant_bot.schemas.project import (
     ProjectUpdateSchema,
     ScheduleSchema,
 )
+
+# =========================================================
+# FIXTURES
+# =========================================================
 
 
 @pytest.fixture()
@@ -33,16 +41,31 @@ def repository(
 
 
 @pytest.fixture()
-def project_data() -> ProjectCreateSchema:
+def project_data(
+    tmp_path: Path,
+) -> ProjectCreateSchema:
+    """
+    Build reusable project data with real temporary
+    filesystem paths.
+    """
+
+    database_path = tmp_path / "db.sqlite3"
+
+    database_path.write_bytes(b"sqlite-test")
+
+    media_path = tmp_path / "media"
+
+    media_path.mkdir()
+
     return ProjectCreateSchema(
-        name="test-project",
+        name="service-test",
         database=DatabaseSchema(
             type=DatabaseType.SQLITE,
-            path=Path("/srv/test/db.sqlite3"),
+            path=database_path,
         ),
         media=MediaSchema(
             enabled=True,
-            path=Path("/srv/test/media"),
+            path=media_path,
         ),
         schedule=ScheduleSchema(
             enabled=True,
@@ -50,6 +73,11 @@ def project_data() -> ProjectCreateSchema:
             unit=ScheduleUnit.MINUTES,
         ),
     )
+
+
+# =========================================================
+# CREATE
+# =========================================================
 
 
 def test_create_project(
@@ -61,17 +89,25 @@ def test_create_project(
     )
 
     assert project.id
-    assert project.name == "test-project"
+
+    assert project.name == "service-test"
+
     assert project.enabled is True
 
     assert project.database.type is DatabaseType.SQLITE
 
-    assert project.database.path == Path("/srv/test/db.sqlite3")
+    assert project.database.path == project_data.database.path
 
-    assert project.media.path == Path("/srv/test/media")
+    assert project.media.path == project_data.media.path
 
     assert project.schedule.interval == 30
+
     assert project.schedule.unit is ScheduleUnit.MINUTES
+
+
+# =========================================================
+# GET
+# =========================================================
 
 
 def test_get_project_by_id(
@@ -87,7 +123,9 @@ def test_get_project_by_id(
     )
 
     assert project is not None
+
     assert project.id == created.id
+
     assert project.name == created.name
 
 
@@ -99,10 +137,13 @@ def test_get_project_by_name(
         project_data,
     )
 
-    project = repository.get_by_name("test-project")
+    project = repository.get_by_name(
+        "service-test",
+    )
 
     assert project is not None
-    assert project.name == "test-project"
+
+    assert project.name == "service-test"
 
 
 def test_get_unknown_project_returns_none(
@@ -113,6 +154,11 @@ def test_get_unknown_project_returns_none(
     )
 
     assert project is None
+
+
+# =========================================================
+# LIST
+# =========================================================
 
 
 def test_list_projects(
@@ -136,9 +182,14 @@ def test_list_projects(
     assert len(projects) == 2
 
     assert {project.name for project in projects} == {
-        "test-project",
+        "service-test",
         "second-project",
     }
+
+
+# =========================================================
+# DUPLICATE VALIDATION
+# =========================================================
 
 
 def test_duplicate_project_name_is_rejected(
@@ -152,7 +203,9 @@ def test_duplicate_project_name_is_rejected(
     with pytest.raises(
         DuplicateEntityError,
     ):
-        repository.create(project_data)
+        repository.create(
+            project_data,
+        )
 
 
 def test_project_name_is_case_insensitive(
@@ -169,10 +222,15 @@ def test_project_name_is_case_insensitive(
         repository.create(
             project_data.model_copy(
                 update={
-                    "name": "TEST-PROJECT",
+                    "name": "SERVICE-TEST",
                 },
             )
         )
+
+
+# =========================================================
+# UPDATE
+# =========================================================
 
 
 def test_update_project(
@@ -192,6 +250,7 @@ def test_update_project(
     )
 
     assert updated.name == "updated-project"
+
     assert updated.enabled is False
 
 
@@ -207,6 +266,11 @@ def test_update_unknown_project_fails(
                 enabled=False,
             ),
         )
+
+
+# =========================================================
+# STATUS
+# =========================================================
 
 
 def test_set_project_enabled(
@@ -230,6 +294,11 @@ def test_set_project_enabled(
     )
 
     assert enabled.enabled is True
+
+
+# =========================================================
+# DELETE
+# =========================================================
 
 
 def test_delete_project(
