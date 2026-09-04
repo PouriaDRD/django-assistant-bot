@@ -11,6 +11,7 @@ from django_assistant_bot.schemas.app_settings import (
     AppSettingsUpdateSchema,
 )
 from django_assistant_bot.services.settings.exceptions import (
+    ProxyConfigurationError,
     SettingsPersistenceError,
 )
 
@@ -202,6 +203,83 @@ class AppSettingsService:
         return self.update_settings(
             AppSettingsUpdateSchema(
                 retention_keep_last=keep_last,
+            )
+        )
+
+    # =====================================================
+    # PROXY
+    # =====================================================
+
+    def set_proxy_url(
+        self,
+        proxy_url: str,
+    ) -> AppSettingsSchema:
+        """
+        Persist a new validated proxy URL.
+
+        Changing the proxy address always disables proxy usage.
+
+        The new endpoint must pass a Telegram connectivity check
+        before it can be explicitly enabled again.
+
+        This prevents an already-enabled proxy from being
+        replaced with an invalid endpoint while keeping
+        proxy_enabled=True.
+        """
+
+        return self.update_settings(
+            AppSettingsUpdateSchema(
+                proxy_enabled=False,
+                proxy_url=proxy_url,
+            )
+        )
+
+    def enable_proxy(
+        self,
+    ) -> AppSettingsSchema:
+        """
+        Enable configured proxy usage.
+
+        A valid persisted proxy URL must already exist.
+        """
+
+        settings = self.get_settings()
+
+        if not settings.proxy_url:
+            raise ProxyConfigurationError(
+                ("Proxy cannot be enabled before " "a proxy URL is configured.")
+            )
+
+        return self.update_settings(
+            AppSettingsUpdateSchema(
+                proxy_enabled=True,
+            )
+        )
+
+    def disable_proxy(
+        self,
+    ) -> AppSettingsSchema:
+        """
+        Disable proxy usage without deleting its URL.
+        """
+
+        return self.update_settings(
+            AppSettingsUpdateSchema(
+                proxy_enabled=False,
+            )
+        )
+
+    def clear_proxy(
+        self,
+    ) -> AppSettingsSchema:
+        """
+        Disable proxy usage and remove its configured URL.
+        """
+
+        return self.update_settings(
+            AppSettingsUpdateSchema(
+                proxy_enabled=False,
+                proxy_url="",
             )
         )
 

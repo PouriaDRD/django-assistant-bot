@@ -12,10 +12,12 @@ from django_assistant_bot.repositories.app_settings import (
     AppSettingsRepository,
 )
 from django_assistant_bot.schemas.app_settings import (
+    AppSettingsSchema,
     AppSettingsUpdateSchema,
 )
 from django_assistant_bot.services.settings import (
     AppSettingsService,
+    ProxyConfigurationError,
 )
 
 
@@ -44,6 +46,8 @@ def test_get_default_settings(
     assert settings.backup_enabled is True
     assert settings.compression_level == 6
     assert settings.retention_keep_last == 10
+    assert settings.proxy_enabled is False
+    assert settings.proxy_url == ""
 
 
 # =========================================================
@@ -169,6 +173,7 @@ def test_compression_helper_preserves_other_settings(
 ) -> None:
     service.disable_bot()
     service.disable_backups()
+
     service.set_retention_keep_last(
         25,
     )
@@ -188,6 +193,140 @@ def test_compression_helper_preserves_other_settings(
 # =========================================================
 
 
+@pytest.mark.parametrize(
+    "proxy_url",
+    [
+        "http://127.0.0.1:8080",
+        "http://proxy.example.com:3128",
+        "socks4://127.0.0.1:1080",
+        "socks5://127.0.0.1:1080",
+        "socks5://proxy.example.com:1080",
+        "socks5://user:password@127.0.0.1:1080",
+        "socks5://user:password@proxy.example.com:1080",
+    ],
+)
+def test_supported_proxy_urls_are_valid(
+    proxy_url: str,
+) -> None:
+    settings = AppSettingsUpdateSchema(
+        proxy_url=proxy_url,
+    )
+
+    assert settings.proxy_url == proxy_url
+
+
+def test_proxy_url_is_trimmed() -> None:
+    settings = AppSettingsUpdateSchema(
+        proxy_url=("  socks5://127.0.0.1:1080  "),
+    )
+
+    assert settings.proxy_url == ("socks5://127.0.0.1:1080")
+
+
+def test_empty_proxy_url_is_valid() -> None:
+    settings = AppSettingsUpdateSchema(
+        proxy_url="",
+    )
+
+    assert settings.proxy_url == ""
+
+
+@pytest.mark.parametrize(
+    "proxy_url",
+    [
+        "https://127.0.0.1:8080",
+        "ftp://127.0.0.1:21",
+        "mtproto://127.0.0.1:443",
+        "ssh://127.0.0.1:22",
+    ],
+)
+def test_unsupported_proxy_scheme_fails(
+    proxy_url: str,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+    ):
+        AppSettingsUpdateSchema(
+            proxy_url=proxy_url,
+        )
+
+
+@pytest.mark.parametrize(
+    "proxy_url",
+    [
+        "socks5://",
+        "socks5://:1080",
+        "http://:8080",
+    ],
+)
+def test_proxy_without_host_fails(
+    proxy_url: str,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+    ):
+        AppSettingsUpdateSchema(
+            proxy_url=proxy_url,
+        )
+
+
+@pytest.mark.parametrize(
+    "proxy_url",
+    [
+        "socks5://127.0.0.1",
+        "http://proxy.example.com",
+        "socks4://localhost",
+    ],
+)
+def test_proxy_without_port_fails(
+    proxy_url: str,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+    ):
+        AppSettingsUpdateSchema(
+            proxy_url=proxy_url,
+        )
+
+
+@pytest.mark.parametrize(
+    "proxy_url",
+    [
+        "socks5://127.0.0.1:0",
+        "socks5://127.0.0.1:65536",
+        "socks5://127.0.0.1:not-a-port",
+    ],
+)
+def test_invalid_proxy_port_fails(
+    proxy_url: str,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+    ):
+        AppSettingsUpdateSchema(
+            proxy_url=proxy_url,
+        )
+
+
+@pytest.mark.parametrize(
+    "proxy_url",
+    [
+        "socks5://127.0.0.1:1080/path",
+        "socks5://127.0.0.1:1080?foo=bar",
+        "socks5://127.0.0.1:1080#fragment",
+    ],
+)
+def test_proxy_with_unsupported_url_components_fails(
+    proxy_url: str,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+    ):
+        AppSettingsUpdateSchema(
+            proxy_url=proxy_url,
+        )
+
+
 def test_update_proxy_settings(
     service: AppSettingsService,
 ) -> None:
@@ -200,7 +339,142 @@ def test_update_proxy_settings(
 
     assert updated.proxy_enabled is True
 
-    assert updated.proxy_url == "socks5://127.0.0.1:1080"
+    assert updated.proxy_url == ("socks5://127.0.0.1:1080")
+
+
+def test_set_proxy_url(
+    service: AppSettingsService,
+) -> None:
+    updated = service.set_proxy_url(
+        "socks5://127.0.0.1:1080",
+    )
+
+    assert updated.proxy_enabled is False
+
+    assert updated.proxy_url == ("socks5://127.0.0.1:1080")
+
+    persisted = service.get_settings()
+
+    assert persisted.proxy_enabled is False
+
+    assert persisted.proxy_url == ("socks5://127.0.0.1:1080")
+
+
+def test_set_proxy_url_does_not_enable_proxy(
+    service: AppSettingsService,
+) -> None:
+    updated = service.set_proxy_url(
+        "http://127.0.0.1:8080",
+    )
+
+    assert updated.proxy_enabled is False
+
+
+def test_enable_proxy(
+    service: AppSettingsService,
+) -> None:
+    service.set_proxy_url(
+        "socks5://127.0.0.1:1080",
+    )
+
+    updated = service.enable_proxy()
+
+    assert updated.proxy_enabled is True
+
+    assert updated.proxy_url == ("socks5://127.0.0.1:1080")
+
+    persisted = service.get_settings()
+
+    assert persisted.proxy_enabled is True
+
+
+def test_enable_proxy_without_url_fails(
+    service: AppSettingsService,
+) -> None:
+    with pytest.raises(
+        ProxyConfigurationError,
+    ):
+        service.enable_proxy()
+
+    persisted = service.get_settings()
+
+    assert persisted.proxy_enabled is False
+    assert persisted.proxy_url == ""
+
+
+def test_disable_proxy_preserves_url(
+    service: AppSettingsService,
+) -> None:
+    service.set_proxy_url(
+        "socks5://127.0.0.1:1080",
+    )
+
+    service.enable_proxy()
+
+    updated = service.disable_proxy()
+
+    assert updated.proxy_enabled is False
+
+    assert updated.proxy_url == ("socks5://127.0.0.1:1080")
+
+
+def test_clear_proxy_disables_and_removes_url(
+    service: AppSettingsService,
+) -> None:
+    service.set_proxy_url(
+        "socks5://127.0.0.1:1080",
+    )
+
+    service.enable_proxy()
+
+    updated = service.clear_proxy()
+
+    assert updated.proxy_enabled is False
+    assert updated.proxy_url == ""
+
+    persisted = service.get_settings()
+
+    assert persisted.proxy_enabled is False
+    assert persisted.proxy_url == ""
+
+
+def test_proxy_helpers_preserve_other_settings(
+    service: AppSettingsService,
+) -> None:
+    service.disable_bot()
+    service.disable_backups()
+    service.disable_retention()
+
+    service.set_compression_level(
+        3,
+    )
+
+    service.set_retention_keep_last(
+        25,
+    )
+
+    service.set_proxy_url(
+        "socks5://127.0.0.1:1080",
+    )
+
+    updated = service.enable_proxy()
+
+    assert updated.proxy_enabled is True
+    assert updated.bot_enabled is False
+    assert updated.backup_enabled is False
+    assert updated.retention_enabled is False
+    assert updated.compression_level == 3
+    assert updated.retention_keep_last == 25
+
+
+def test_schema_rejects_invalid_persisted_proxy_url() -> None:
+    with pytest.raises(
+        ValidationError,
+    ):
+        AppSettingsSchema(
+            proxy_enabled=False,
+            proxy_url="invalid-proxy",
+        )
 
 
 # =========================================================
@@ -350,3 +624,31 @@ def test_invalid_retention_keep_last_fails() -> None:
         AppSettingsUpdateSchema(
             retention_keep_last=0,
         )
+
+
+def test_changing_proxy_url_disables_enabled_proxy(
+    service: AppSettingsService,
+) -> None:
+    service.set_proxy_url(
+        "socks5://127.0.0.1:1080",
+    )
+
+    service.enable_proxy()
+
+    before = service.get_settings()
+
+    assert before.proxy_enabled is True
+
+    updated = service.set_proxy_url(
+        "socks5://127.0.0.1:1081",
+    )
+
+    assert updated.proxy_enabled is False
+
+    assert updated.proxy_url == ("socks5://127.0.0.1:1081")
+
+    persisted = service.get_settings()
+
+    assert persisted.proxy_enabled is False
+
+    assert persisted.proxy_url == ("socks5://127.0.0.1:1081")

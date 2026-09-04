@@ -1,7 +1,19 @@
 from __future__ import annotations
 
 import logging
+import asyncio
+from aiohttp import (
+    ClientError,
+)
+from aiohttp_socks import (
+    ProxyConnectionError,
+    ProxyError,
+    ProxyTimeoutError,
+)
 
+from aiogram.exceptions import (
+    TelegramNetworkError,
+)
 from aiogram import (
     Bot,
     Dispatcher,
@@ -21,6 +33,10 @@ from aiogram.types import (
     BotCommandScopeDefault,
 )
 
+
+from django_assistant_bot.bot.exceptions import (
+    TelegramStartupError,
+)
 from django_assistant_bot.bot.context import (
     ApplicationContext,
 )
@@ -36,6 +52,9 @@ from django_assistant_bot.bot.handlers.common import (
 from django_assistant_bot.bot.handlers.projects import (
     router as projects_router,
 )
+from django_assistant_bot.bot.handlers.proxy import (
+    router as proxy_router,
+)
 from django_assistant_bot.bot.handlers.scheduler import (
     router as scheduler_router,
 )
@@ -50,6 +69,9 @@ from django_assistant_bot.bot.middlewares.auth import (
 )
 from django_assistant_bot.bot.middlewares.bot_enabled import (
     BotEnabledMiddleware,
+)
+from django_assistant_bot.bot.session import (
+    build_telegram_session,
 )
 
 # =========================================================
@@ -83,16 +105,41 @@ class TelegramBot:
 
         token = context.environment.telegram_bot_token.get_secret_value()
 
+        # -------------------------------------------------
+        # TELEGRAM HTTP SESSION
+        # -------------------------------------------------
+
+        settings = context.settings.get_settings()
+
+        self._proxy_enabled = settings.proxy_enabled
+
+        session = build_telegram_session(
+            settings,
+        )
+
+        # -------------------------------------------------
+        # BOT
+        # -------------------------------------------------
+
         self._bot = Bot(
             token=token,
+            session=session,
             default=DefaultBotProperties(
                 parse_mode=ParseMode.HTML,
             ),
         )
 
+        # -------------------------------------------------
+        # DISPATCHER
+        # -------------------------------------------------
+
         self._dispatcher = Dispatcher(
             storage=MemoryStorage(),
         )
+
+        # -------------------------------------------------
+        # MIDDLEWARES
+        # -------------------------------------------------
 
         self._auth_middleware = AdminAuthMiddleware(
             admin_service=(context.admins),
@@ -175,6 +222,10 @@ class TelegramBot:
         )
 
         self._dispatcher.include_router(
+            proxy_router,
+        )
+
+        self._dispatcher.include_router(
             system_status_router,
         )
 
@@ -198,8 +249,6 @@ class TelegramBot:
         # DEPENDENCIES
         # =================================================
 
-        # ApplicationContext is injected into handlers by
-        # aiogram dependency resolution.
         self._dispatcher["context"] = self._context
 
     # =====================================================
@@ -276,16 +325,13 @@ class TelegramBot:
 
         private_scope = BotCommandScopeAllPrivateChats()
 
-        # Remove old localized command definitions first.
         await self._clear_legacy_commands()
 
-        # Default fallback command list.
         await self._bot.set_my_commands(
             commands=commands,
             scope=default_scope,
         )
 
-        # Explicit command list for private bot chats.
         await self._bot.set_my_commands(
             commands=commands,
             scope=private_scope,
@@ -303,9 +349,6 @@ class TelegramBot:
     ) -> None:
         """
         Read back and log registered Telegram commands.
-
-        This helps verify the actual command list stored
-        by Telegram.
         """
 
         commands = await self._bot.get_my_commands(
@@ -327,22 +370,54 @@ class TelegramBot:
     # LIFECYCLE
     # =====================================================
 
-    async def start(
-        self,
-    ) -> None:
+    async def start(self) -> None:
         """
         Register Telegram commands and start polling.
+
+        Expected Telegram transport failures are converted into
+        a sanitized application-level exception.
+
+        Raw networking and proxy exception messages are never
+        propagated because they may expose proxy endpoints,
+        credentials, or other sensitive connection details.
+
+        Programming errors and cancellation are intentionally
+        allowed to propagate unchanged.
         """
 
-        await self._register_commands()
+        try:
+            await self._register_commands()
 
-        await self._dispatcher.start_polling(
-            self._bot,
-        )
+            await self._dispatcher.start_polling(
+                self._bot,
+            )
 
-    async def stop(
-        self,
-    ) -> None:
+        except asyncio.CancelledError:
+            raise
+
+        except (
+            ProxyConnectionError,
+            ProxyTimeoutError,
+            ProxyError,
+            TelegramNetworkError,
+            ClientError,
+            TimeoutError,
+            ConnectionError,
+        ):
+            if self._proxy_enabled:
+                raise TelegramStartupError(
+                    ("Telegram startup failed while " "using the configured proxy.")
+                ) from None
+
+            raise TelegramStartupError(
+                (
+                    "Telegram startup failed because "
+                    "the Telegram network connection "
+                    "could not be established."
+                )
+            ) from None
+
+    async def stop(self) -> None:
         """
         Close Telegram HTTP session.
         """
