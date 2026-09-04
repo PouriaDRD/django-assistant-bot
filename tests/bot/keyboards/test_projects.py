@@ -9,6 +9,10 @@ from django_assistant_bot.bot.keyboards.projects import (
     project_details_keyboard,
     project_list_keyboard,
     projects_menu_keyboard,
+    schedule_keyboard,
+)
+from django_assistant_bot.core.environment import (
+    AppEnvironment,
 )
 from django_assistant_bot.database.models.enums import (
     DatabaseType,
@@ -61,7 +65,7 @@ def get_callback_data(
     keyboard,
 ) -> list[str]:
     """
-    Extract non-null callback_data values from a keyboard.
+    Extract non-null callback_data values.
     """
 
     return [
@@ -72,23 +76,29 @@ def get_callback_data(
     ]
 
 
+def get_button_texts(
+    keyboard,
+) -> list[str]:
+    """
+    Extract all button labels.
+    """
+
+    return [button.text for row in keyboard.inline_keyboard for button in row]
+
+
 # =========================================================
 # PROJECTS MENU
 # =========================================================
 
 
 def test_projects_menu_back_returns_to_main_menu() -> None:
-    """
-    Projects menu is directly below the application main menu.
-    """
-
     keyboard = projects_menu_keyboard()
 
-    callback_data = get_callback_data(
+    callbacks = get_callback_data(
         keyboard,
     )
 
-    assert MAIN_MENU_CALLBACK in callback_data
+    assert MAIN_MENU_CALLBACK in callbacks
 
 
 # =========================================================
@@ -99,10 +109,6 @@ def test_projects_menu_back_returns_to_main_menu() -> None:
 def test_project_list_back_returns_to_projects_menu(
     tmp_path: Path,
 ) -> None:
-    """
-    Project list must return one level back to projects menu.
-    """
-
     project = build_project(
         tmp_path,
     )
@@ -113,31 +119,27 @@ def test_project_list_back_returns_to_projects_menu(
         ]
     )
 
-    callback_data = get_callback_data(
+    callbacks = get_callback_data(
         keyboard,
     )
 
-    assert PROJECTS_MENU_CALLBACK in callback_data
+    assert PROJECTS_MENU_CALLBACK in callbacks
 
-    assert MAIN_MENU_CALLBACK not in callback_data
+    assert MAIN_MENU_CALLBACK not in callbacks
 
 
 def test_empty_project_list_back_returns_to_projects_menu() -> None:
-    """
-    Empty project list must preserve the same navigation.
-    """
-
     keyboard = project_list_keyboard(
         [],
     )
 
-    callback_data = get_callback_data(
+    callbacks = get_callback_data(
         keyboard,
     )
 
-    assert PROJECTS_MENU_CALLBACK in callback_data
+    assert PROJECTS_MENU_CALLBACK in callbacks
 
-    assert MAIN_MENU_CALLBACK not in callback_data
+    assert MAIN_MENU_CALLBACK not in callbacks
 
 
 # =========================================================
@@ -146,24 +148,20 @@ def test_empty_project_list_back_returns_to_projects_menu() -> None:
 
 
 def test_project_details_back_returns_to_project_list() -> None:
-    """
-    Project details must return one level back to project list.
-    """
-
     keyboard = project_details_keyboard(
         project_id="project-1",
         enabled=True,
     )
 
-    callback_data = get_callback_data(
+    callbacks = get_callback_data(
         keyboard,
     )
 
-    assert PROJECT_LIST_CALLBACK in callback_data
+    assert PROJECT_LIST_CALLBACK in callbacks
 
-    assert PROJECTS_MENU_CALLBACK not in callback_data
+    assert PROJECTS_MENU_CALLBACK not in callbacks
 
-    assert MAIN_MENU_CALLBACK not in callback_data
+    assert MAIN_MENU_CALLBACK not in callbacks
 
 
 # =========================================================
@@ -174,15 +172,6 @@ def test_project_details_back_returns_to_project_list() -> None:
 def test_project_navigation_hierarchy(
     tmp_path: Path,
 ) -> None:
-    """
-    Verify the complete project navigation hierarchy.
-
-    Main
-    └── Projects
-        └── Project List
-            └── Project Details
-    """
-
     project = build_project(
         tmp_path,
     )
@@ -212,11 +201,110 @@ def test_project_navigation_hierarchy(
         project_details,
     )
 
-    # Projects -> Main
     assert MAIN_MENU_CALLBACK in projects_callbacks
 
-    # Project List -> Projects
     assert PROJECTS_MENU_CALLBACK in list_callbacks
 
-    # Project Details -> Project List
     assert PROJECT_LIST_CALLBACK in details_callbacks
+
+
+# =========================================================
+# DEVELOPMENT SCHEDULE
+# =========================================================
+
+
+def test_development_schedule_has_short_intervals() -> None:
+    keyboard = schedule_keyboard(
+        environment=(AppEnvironment.DEVELOPMENT),
+    )
+
+    callbacks = get_callback_data(
+        keyboard,
+    )
+
+    assert "project:schedule:1:minutes" in callbacks
+
+    assert "project:schedule:2:minutes" in callbacks
+
+    assert "project:schedule:5:minutes" in callbacks
+
+    assert "project:schedule:10:minutes" in callbacks
+
+    assert "project:schedule:15:minutes" in callbacks
+
+
+# =========================================================
+# TESTING SCHEDULE
+# =========================================================
+
+
+def test_testing_schedule_has_short_intervals() -> None:
+    keyboard = schedule_keyboard(
+        environment=(AppEnvironment.TESTING),
+    )
+
+    callbacks = get_callback_data(
+        keyboard,
+    )
+
+    assert "project:schedule:1:minutes" in callbacks
+
+    assert "project:schedule:10:minutes" in callbacks
+
+
+# =========================================================
+# PRODUCTION SCHEDULE
+# =========================================================
+
+
+def test_production_schedule_starts_at_15_minutes() -> None:
+    keyboard = schedule_keyboard(
+        environment=(AppEnvironment.PRODUCTION),
+    )
+
+    callbacks = get_callback_data(
+        keyboard,
+    )
+
+    assert "project:schedule:1:minutes" not in callbacks
+
+    assert "project:schedule:2:minutes" not in callbacks
+
+    assert "project:schedule:5:minutes" not in callbacks
+
+    assert "project:schedule:10:minutes" not in callbacks
+
+    assert "project:schedule:15:minutes" in callbacks
+
+    assert "project:schedule:30:minutes" in callbacks
+
+    assert "project:schedule:1:hours" in callbacks
+
+
+def test_production_schedule_first_option_is_15_minutes() -> None:
+    keyboard = schedule_keyboard(
+        environment=(AppEnvironment.PRODUCTION),
+    )
+
+    texts = get_button_texts(
+        keyboard,
+    )
+
+    assert texts[0] == "15 دقیقه"
+
+
+# =========================================================
+# CALLBACK LIMIT
+# =========================================================
+
+
+def test_schedule_callbacks_fit_telegram_limit() -> None:
+    for environment in AppEnvironment:
+        keyboard = schedule_keyboard(
+            environment=environment,
+        )
+
+        for callback in get_callback_data(
+            keyboard,
+        ):
+            assert len(callback.encode("utf-8")) <= 64

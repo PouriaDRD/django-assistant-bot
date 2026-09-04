@@ -13,6 +13,9 @@ from aiogram.types import Message
 from django_assistant_bot.bot.handlers.projects.create import (
     project_create_confirm,
 )
+from django_assistant_bot.core.environment import (
+    AppEnvironment,
+)
 from django_assistant_bot.database.models.enums import (
     DatabaseType,
     ScheduleUnit,
@@ -32,6 +35,10 @@ from django_assistant_bot.schemas.project import (
 def build_project(
     tmp_path: Path,
 ) -> ProjectSchema:
+    """
+    Build project returned by ProjectService.
+    """
+
     return ProjectSchema(
         id="project-1",
         name="Test Project",
@@ -53,6 +60,10 @@ def build_project(
 
 
 def build_callback():
+    """
+    Build minimal callback used by project creation.
+    """
+
     message = Mock(
         spec=Message,
     )
@@ -69,7 +80,11 @@ def build_callback():
 def build_state(
     tmp_path: Path,
 ):
-    state = SimpleNamespace(
+    """
+    Build project creation FSM data.
+    """
+
+    return SimpleNamespace(
         get_data=AsyncMock(
             return_value={
                 "project_name": ("Test Project"),
@@ -85,18 +100,27 @@ def build_state(
         clear=AsyncMock(),
     )
 
-    return state
-
 
 def build_context(
     project: ProjectSchema,
 ):
+    """
+    Build minimal ApplicationContext-compatible object.
+
+    Development environment is intentional because these
+    tests use a one-minute schedule.
+    """
+
     projects = Mock()
+
     scheduler = Mock()
 
     projects.create_project.return_value = project
 
     return SimpleNamespace(
+        environment=SimpleNamespace(
+            environment=(AppEnvironment.DEVELOPMENT),
+        ),
         projects=projects,
         scheduler=scheduler,
     )
@@ -176,7 +200,7 @@ async def test_project_creation_survives_scheduler_failure(
         project,
     )
 
-    # Project creation must remain successful even if
+    # Project persistence must remain successful even when
     # scheduler synchronization temporarily fails.
     state.clear.assert_awaited_once_with()
 

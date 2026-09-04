@@ -126,7 +126,7 @@ async def test_enable_retention() -> None:
 
     context.settings.enable_retention.assert_called_once_with()
 
-    callback.answer.assert_awaited_once_with("Retention فعال شد.")
+    callback.answer.assert_awaited_once_with("نگهداری بکاپ‌ها فعال شد.")
 
     callback.message.edit_text.assert_awaited_once()
 
@@ -155,7 +155,7 @@ async def test_disable_retention() -> None:
 
     context.settings.disable_retention.assert_called_once_with()
 
-    callback.answer.assert_awaited_once_with("Retention غیرفعال شد.")
+    callback.answer.assert_awaited_once_with("نگهداری بکاپ‌ها غیرفعال شد.")
 
     callback.message.edit_text.assert_awaited_once()
 

@@ -5,6 +5,9 @@ from aiogram.types import (
     InlineKeyboardMarkup,
 )
 
+from django_assistant_bot.core.environment import (
+    AppEnvironment,
+)
 from django_assistant_bot.schemas.project import (
     ProjectSchema,
 )
@@ -15,7 +18,9 @@ from django_assistant_bot.schemas.project import (
 
 
 PROJECTS_MENU_CALLBACK = "projects"
+
 PROJECT_LIST_CALLBACK = "project:list"
+
 MAIN_MENU_CALLBACK = "main:menu"
 
 
@@ -207,34 +212,61 @@ def project_confirmation_keyboard() -> InlineKeyboardMarkup:
 # =========================================================
 
 
-def schedule_keyboard() -> InlineKeyboardMarkup:
+def schedule_keyboard(
+    *,
+    environment: AppEnvironment = (AppEnvironment.DEVELOPMENT),
+) -> InlineKeyboardMarkup:
     """
-    Build predefined project backup schedule options
-    used during project creation.
+    Build predefined project backup schedule options.
+
+    Development and testing environments expose short
+    intervals useful during development.
+
+    Production intentionally starts at 15 minutes to avoid
+    accidentally creating overly aggressive backup jobs.
     """
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    rows: list[list[InlineKeyboardButton]] = []
+
+    # -----------------------------------------------------
+    # DEVELOPMENT / TESTING ONLY
+    # -----------------------------------------------------
+
+    if environment in {
+        AppEnvironment.DEVELOPMENT,
+        AppEnvironment.TESTING,
+    }:
+        rows.extend(
             [
-                InlineKeyboardButton(
-                    text="1 دقیقه",
-                    callback_data=("project:schedule:" "1:minutes"),
-                ),
-                InlineKeyboardButton(
-                    text="2 دقیقه",
-                    callback_data=("project:schedule:" "2:minutes"),
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="5 دقیقه",
-                    callback_data=("project:schedule:" "5:minutes"),
-                ),
-                InlineKeyboardButton(
-                    text="10 دقیقه",
-                    callback_data=("project:schedule:" "10:minutes"),
-                ),
-            ],
+                [
+                    InlineKeyboardButton(
+                        text="1 دقیقه",
+                        callback_data=("project:schedule:" "1:minutes"),
+                    ),
+                    InlineKeyboardButton(
+                        text="2 دقیقه",
+                        callback_data=("project:schedule:" "2:minutes"),
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="5 دقیقه",
+                        callback_data=("project:schedule:" "5:minutes"),
+                    ),
+                    InlineKeyboardButton(
+                        text="10 دقیقه",
+                        callback_data=("project:schedule:" "10:minutes"),
+                    ),
+                ],
+            ]
+        )
+
+    # -----------------------------------------------------
+    # ALL ENVIRONMENTS
+    # -----------------------------------------------------
+
+    rows.extend(
+        [
             [
                 InlineKeyboardButton(
                     text="15 دقیقه",
@@ -275,7 +307,11 @@ def schedule_keyboard() -> InlineKeyboardMarkup:
                     callback_data=("project:schedule:" "24:hours"),
                 ),
             ],
-        ],
+        ]
+    )
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=rows,
     )
 
 

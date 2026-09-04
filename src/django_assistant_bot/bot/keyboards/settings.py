@@ -59,9 +59,9 @@ def settings_keyboard(
 
     retention_button = InlineKeyboardButton(
         text=(
-            "🧹 غیرفعال کردن Retention"
+            "🧹 غیرفعال کردن نگهداری بکاپ‌ها"
             if retention_enabled
-            else "🧹 فعال کردن Retention"
+            else "🧹 فعال کردن نگهداری بکاپ‌ها"
         ),
         callback_data=(
             RETENTION_DISABLE_CALLBACK
@@ -72,7 +72,7 @@ def settings_keyboard(
 
     retention_keep_last_button = InlineKeyboardButton(
         text=("📦 تعداد بکاپ‌های نگهداری‌شده: " f"{retention_keep_last}"),
-        callback_data=(RETENTION_KEEP_LAST_CALLBACK),
+        callback_data=RETENTION_KEEP_LAST_CALLBACK,
     )
 
     return InlineKeyboardMarkup(

@@ -4,6 +4,10 @@ from django_assistant_bot.schemas.app_settings import (
     AppSettingsSchema,
 )
 
+# =========================================================
+# SETTINGS MENU
+# =========================================================
+
 
 def format_settings_menu(
     settings: AppSettingsSchema,
@@ -35,6 +39,11 @@ def format_settings_menu(
     )
 
 
+# =========================================================
+# RETENTION KEEP-LAST
+# =========================================================
+
+
 def format_retention_keep_last_prompt(
     *,
     current_value: int,
@@ -56,6 +65,11 @@ def format_retention_keep_last_prompt(
         "مثال:\n"
         "<code>10</code>"
     )
+
+
+# =========================================================
+# BOT DISABLED
+# =========================================================
 
 
 def format_bot_disabled() -> str:

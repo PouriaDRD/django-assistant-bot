@@ -5,8 +5,13 @@ from html import escape
 from pathlib import Path
 from typing import Final
 
-from aiogram import F, Router
-from aiogram.fsm.context import FSMContext
+from aiogram import (
+    F,
+    Router,
+)
+from aiogram.fsm.context import (
+    FSMContext,
+)
 from aiogram.types import (
     CallbackQuery,
     Message,
@@ -27,6 +32,9 @@ from django_assistant_bot.bot.keyboards.projects import (
 )
 from django_assistant_bot.bot.states.project import (
     ProjectCreationState,
+)
+from django_assistant_bot.core.environment import (
+    AppEnvironment,
 )
 from django_assistant_bot.database.models.enums import (
     DatabaseType,
@@ -70,6 +78,52 @@ logger = logging.getLogger(
 
 
 PROJECT_NAME_MAX_LENGTH: Final[int] = 200
+
+PRODUCTION_MINIMUM_BACKUP_INTERVAL_MINUTES: Final[int] = 15
+
+
+# =========================================================
+# HELPERS
+# =========================================================
+
+
+def _get_environment(
+    context: ApplicationContext | None,
+) -> AppEnvironment:
+    """
+    Resolve current application environment.
+
+    The development fallback exists only to keep direct
+    handler unit tests lightweight when no application
+    context is supplied.
+    """
+
+    if context is None:
+        return AppEnvironment.DEVELOPMENT
+
+    return context.environment.environment
+
+
+def _is_schedule_allowed(
+    *,
+    environment: AppEnvironment,
+    schedule: ScheduleSchema,
+) -> bool:
+    """
+    Return whether a schedule is allowed in the current
+    application environment.
+
+    Production does not allow minute-based schedules below
+    15 minutes.
+    """
+
+    if environment is not AppEnvironment.PRODUCTION:
+        return True
+
+    if schedule.unit is not ScheduleUnit.MINUTES:
+        return True
+
+    return schedule.interval >= PRODUCTION_MINIMUM_BACKUP_INTERVAL_MINUTES
 
 
 # =========================================================
@@ -192,8 +246,6 @@ async def project_database_handler(
         await message.answer("❌ مسیر دیتابیس باید کامل و Absolute باشد.")
         return
 
-    # Only escape the path used for Telegram HTML output.
-    # The real filesystem path remains unchanged.
     safe_path = escape(str(path))
 
     if not path.exists():
@@ -242,6 +294,7 @@ async def project_database_handler(
 async def project_media_handler(
     message: Message,
     state: FSMContext,
+    context: ApplicationContext | None = None,
 ) -> None:
     raw_path = (message.text or "").strip()
 
@@ -255,8 +308,6 @@ async def project_media_handler(
         await message.answer("❌ مسیر Media باید کامل و Absolute باشد.")
         return
 
-    # Only escape the path used for Telegram HTML output.
-    # The real filesystem path remains unchanged.
     safe_path = escape(str(path))
 
     if not path.exists():
@@ -289,12 +340,18 @@ async def project_media_handler(
         ProjectCreationState.waiting_for_schedule,
     )
 
+    environment = _get_environment(
+        context,
+    )
+
     await message.answer(
         "⏰ <b>زمان‌بندی Backup</b>\n"
         "\n"
         "Backup این پروژه هر چند وقت "
         "یک‌بار انجام شود؟",
-        reply_markup=schedule_keyboard(),
+        reply_markup=schedule_keyboard(
+            environment=environment,
+        ),
     )
 
 
@@ -310,6 +367,7 @@ async def project_media_handler(
 async def project_schedule_handler(
     callback: CallbackQuery,
     state: FSMContext,
+    context: ApplicationContext | None = None,
 ) -> None:
     callback_data = callback.data
 
@@ -341,6 +399,20 @@ async def project_schedule_handler(
     ):
         await callback.answer(
             "زمان‌بندی نامعتبر است.",
+            show_alert=True,
+        )
+        return
+
+    environment = _get_environment(
+        context,
+    )
+
+    if not _is_schedule_allowed(
+        environment=environment,
+        schedule=schedule,
+    ):
+        await callback.answer(
+            "حداقل فاصله در محیط پروداکشن 15 دقیقه است.",
             show_alert=True,
         )
         return
@@ -453,7 +525,7 @@ async def project_create_confirm(
         str,
     ):
         await callback.answer(
-            "مسیر Media نامعتبر است.",
+            "مسیر پوشه مدیا نامعتبر است.",
             show_alert=True,
         )
         return
@@ -470,6 +542,19 @@ async def project_create_confirm(
 
     try:
         schedule = ScheduleSchema.model_validate(schedule_data)
+
+        # Defense in depth:
+        # do not persist a short production schedule even
+        # if invalid FSM data was somehow injected.
+        if not _is_schedule_allowed(
+            environment=(context.environment.environment),
+            schedule=schedule,
+        ):
+            await callback.answer(
+                "حداقل فاصله در محیط پروداکشن 15 دقیقه است.",
+                show_alert=True,
+            )
+            return
 
         project = context.projects.create_project(
             ProjectCreateSchema(
@@ -511,10 +596,6 @@ async def project_create_confirm(
             show_alert=True,
         )
         return
-
-    # -----------------------------------------------------
-    # SCHEDULER SYNC
-    # -----------------------------------------------------
 
     try:
         context.scheduler.sync_project(

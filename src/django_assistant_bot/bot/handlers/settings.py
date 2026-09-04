@@ -358,7 +358,7 @@ async def enable_retention_callback(
     context: ApplicationContext,
 ) -> None:
     """
-    Enable automatic retention cleanup.
+    Enable automatic backup retention cleanup.
     """
 
     if not isinstance(
@@ -378,7 +378,7 @@ async def enable_retention_callback(
         )
         return
 
-    await callback.answer("Retention فعال شد.")
+    await callback.answer("نگهداری بکاپ‌ها فعال شد.")
 
     await callback.message.edit_text(
         format_settings_menu(
@@ -401,7 +401,7 @@ async def disable_retention_callback(
     context: ApplicationContext,
 ) -> None:
     """
-    Disable automatic retention cleanup.
+    Disable automatic backup retention cleanup.
     """
 
     if not isinstance(
@@ -421,7 +421,7 @@ async def disable_retention_callback(
         )
         return
 
-    await callback.answer("Retention غیرفعال شد.")
+    await callback.answer("نگهداری بکاپ‌ها غیرفعال شد.")
 
     await callback.message.edit_text(
         format_settings_menu(
@@ -493,7 +493,7 @@ async def retention_keep_last_handler(
     context: ApplicationContext,
 ) -> None:
     """
-    Persist a new retention keep-last value.
+    Persist a new backup retention keep-last value.
     """
 
     raw_value = (message.text or "").strip()
@@ -524,9 +524,9 @@ async def retention_keep_last_handler(
         return
 
     except SettingsPersistenceError:
-        logger.exception("Could not update retention keep-last.")
+        logger.exception("Could not update backup retention keep-last.")
 
-        await message.answer("❌ خطا در ذخیره تنظیمات Retention.")
+        await message.answer("❌ خطا در ذخیره تنظیمات نگهداری بکاپ‌ها.")
         return
 
     await state.clear()
@@ -556,7 +556,7 @@ async def retention_keep_last_cancel_callback(
     context: ApplicationContext,
 ) -> None:
     """
-    Cancel retention keep-last input flow.
+    Cancel backup retention keep-last input flow.
     """
 
     await state.clear()
