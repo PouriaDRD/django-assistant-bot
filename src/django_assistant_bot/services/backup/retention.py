@@ -58,6 +58,10 @@ class RetentionResult:
         ...,
     ] = ()
 
+    successful_before: int = 0
+
+    successful_after: int = 0
+
 
 class RetentionService:
     """
@@ -98,7 +102,7 @@ class RetentionService:
 
         if keep_last < 1:
             raise RetentionError(
-                ("Retention keep_last must be " "greater than or equal to 1.")
+                "Retention keep_last must be " "greater than or equal to 1."
             )
 
         try:
@@ -108,8 +112,10 @@ class RetentionService:
 
         except PersistenceError as exc:
             raise RetentionError(
-                ("Could not load backup history " "for retention.")
+                "Could not load backup history " "for retention."
             ) from exc
+
+        successful_before = len(histories)
 
         expired_histories = histories[keep_last:]
 
@@ -127,7 +133,7 @@ class RetentionService:
                     if archive_path.exists():
                         archive_path.unlink()
 
-                    removed_archives.append(archive_path)
+                        removed_archives.append(archive_path)
 
                 except OSError:
                     failed_archives.append(archive_path)
@@ -141,20 +147,20 @@ class RetentionService:
 
             except PersistenceError as exc:
                 raise RetentionError(
-                    (
-                        "Archive cleanup completed "
-                        "but backup history cleanup "
-                        "failed."
-                    )
+                    "Archive cleanup completed " "but backup history cleanup " "failed."
                 ) from exc
 
             if deleted:
                 removed_history_ids.append(history.id)
 
+        successful_after = successful_before - len(removed_history_ids)
+
         return RetentionResult(
             removed_archives=tuple(removed_archives),
             removed_history_ids=tuple(removed_history_ids),
             failed_archives=tuple(failed_archives),
+            successful_before=(successful_before),
+            successful_after=(successful_after),
         )
 
 

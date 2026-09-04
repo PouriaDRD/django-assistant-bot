@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from django_assistant_bot.database.models.enums import BackupStatus
+from django_assistant_bot.database.models.enums import (
+    BackupStatus,
+)
 
 
 @dataclass(
@@ -71,6 +73,34 @@ class ChecksumResult:
     frozen=True,
     slots=True,
 )
+class BackupRetentionSummary:
+    """
+    Retention information attached to a successful backup.
+
+    None on BackupResult means retention was disabled.
+
+    cleanup_failed=True means backup itself succeeded but
+    retention cleanup failed and no reliable cleanup counts
+    are available.
+    """
+
+    keep_last: int
+
+    successful_before: int | None = None
+
+    successful_after: int | None = None
+
+    removed_count: int = 0
+
+    failed_archive_count: int = 0
+
+    cleanup_failed: bool = False
+
+
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class BackupResult:
     """
     Final result of a successful project backup.
@@ -98,6 +128,8 @@ class BackupResult:
 
     checksum: ChecksumResult
 
+    retention: BackupRetentionSummary | None = None
+
     @property
     def duration_seconds(self) -> float:
         """
@@ -122,3 +154,13 @@ class BackupResult:
         remaining_seconds = int(seconds % 60)
 
         return f"{minutes}m " f"{remaining_seconds}s"
+
+
+__all__ = [
+    "ArchiveResult",
+    "BackupResult",
+    "BackupRetentionSummary",
+    "ChecksumResult",
+    "DatabaseBackupResult",
+    "MediaBackupResult",
+]

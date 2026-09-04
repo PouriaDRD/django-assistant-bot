@@ -393,7 +393,36 @@ def test_successful_backup_records_history(
         project.id,
     )
 
-    assert returned is result
+    assert returned is not result
+
+    assert returned.project_id == result.project_id
+    assert returned.project_name == result.project_name
+    assert returned.status is result.status
+    assert returned.archive_path == result.archive_path
+
+    assert returned.database_size_bytes == result.database_size_bytes
+
+    assert returned.media_size_bytes == result.media_size_bytes
+
+    assert returned.archive_size_bytes == result.archive_size_bytes
+
+    assert returned.media_file_count == result.media_file_count
+
+    assert returned.checksum == result.checksum
+
+    assert returned.retention is not None
+
+    assert returned.retention.keep_last == settings.retention_keep_last
+
+    assert returned.retention.successful_before == 0
+
+    assert returned.retention.successful_after == 0
+
+    assert returned.retention.removed_count == 0
+
+    assert returned.retention.failed_archive_count == 0
+
+    assert returned.retention.cleanup_failed is False
 
     assert runner.projects == [
         project,
@@ -946,7 +975,23 @@ def test_successful_backup_runs_retention(
         result=backup_result,
     )
 
-    retention = FakeRetentionRunner()
+    retention_result = RetentionResult(
+        removed_archives=(
+            tmp_path / "old-1.zip",
+            tmp_path / "old-2.zip",
+        ),
+        removed_history_ids=(
+            "history-1",
+            "history-2",
+        ),
+        failed_archives=(),
+        successful_before=9,
+        successful_after=7,
+    )
+
+    retention = FakeRetentionRunner(
+        result=retention_result,
+    )
 
     (
         coordinator,
@@ -964,11 +1009,25 @@ def test_successful_backup_runs_retention(
         project.id,
     )
 
-    assert returned is backup_result
+    assert returned is not backup_result
 
-    assert len(history.records) == 1
+    assert returned.status is BackupStatus.SUCCESS
 
-    assert history.records[0].status is BackupStatus.SUCCESS
+    assert returned.archive_path == backup_result.archive_path
+
+    assert returned.retention is not None
+
+    assert returned.retention.keep_last == 7
+
+    assert returned.retention.successful_before == 9
+
+    assert returned.retention.successful_after == 7
+
+    assert returned.retention.removed_count == 2
+
+    assert returned.retention.failed_archive_count == 0
+
+    assert returned.retention.cleanup_failed is False
 
     assert returned_retention is retention
 
@@ -978,6 +1037,8 @@ def test_successful_backup_runs_retention(
             7,
         )
     ]
+
+    assert len(history.records) == 1
 
 
 def test_disabled_retention_is_not_executed(
@@ -1069,24 +1130,82 @@ def test_retention_failure_does_not_fail_successful_backup(
         project.id,
     )
 
-    assert returned is backup_result
+    assert returned is not backup_result
+
+    assert returned.status is BackupStatus.SUCCESS
+
+    assert returned.archive_path == backup_result.archive_path
+
+    assert returned.retention is not None
+
+    assert returned.retention.keep_last == 5
+
+    assert returned.retention.successful_before is None
+
+    assert returned.retention.successful_after is None
+
+    assert returned.retention.removed_count == 0
+
+    assert returned.retention.failed_archive_count == 0
+
+    assert returned.retention.cleanup_failed is True
 
     assert len(history.records) == 1
-
-    assert history.records[0].status is BackupStatus.SUCCESS
 
     assert retention.calls == [
         (
             project.id,
-            settings.retention_keep_last,
+            5,
         )
     ]
 
     assert "Backup retention cleanup failed" in caplog.text
 
-    assert not coordinator.is_running(
+    assert "retention failed" in caplog.text
+
+
+def test_disabled_retention_returns_result_without_summary(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    settings = build_settings(
+        tmp_path,
+        retention_enabled=False,
+    )
+
+    backup_result = build_result(
+        tmp_path,
+    )
+
+    runner = FakeBackupRunner(
+        result=backup_result,
+    )
+
+    (
+        coordinator,
+        history,
+        _,
+        retention,
+    ) = build_coordinator(
+        project=project,
+        settings=settings,
+        runner=runner,
+    )
+
+    returned = coordinator.run(
         project.id,
     )
+
+    assert returned is backup_result
+
+    assert returned.retention is None
+
+    assert retention.calls == []
+
+    assert len(history.records) == 1
 
 
 def test_history_failure_prevents_retention(

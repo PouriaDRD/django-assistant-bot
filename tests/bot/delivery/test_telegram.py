@@ -23,12 +23,14 @@ from django_assistant_bot.database.models.enums import (
 from django_assistant_bot.schemas.admin import (
     AdminSchema,
 )
-from django_assistant_bot.services.backup.models import (
-    BackupResult,
-    ChecksumResult,
-)
+
 from django_assistant_bot.services.delivery import (
     BackupDeliveryFileTooLargeError,
+)
+from django_assistant_bot.services.backup.models import (
+    BackupResult,
+    BackupRetentionSummary,
+    ChecksumResult,
 )
 
 # =========================================================
@@ -468,3 +470,75 @@ async def test_delivery_caption_contains_checksum(
     assert "checksum-value" in caption
 
     assert "SHA256" in caption
+
+
+@pytest.mark.asyncio
+async def test_delivery_caption_contains_retention_summary(
+    tmp_path: Path,
+) -> None:
+    result = build_result(
+        tmp_path,
+    )
+
+    result = BackupResult(
+        project_id=result.project_id,
+        project_name=result.project_name,
+        status=result.status,
+        archive_path=result.archive_path,
+        started_at=result.started_at,
+        finished_at=result.finished_at,
+        database_size_bytes=result.database_size_bytes,
+        media_size_bytes=result.media_size_bytes,
+        archive_size_bytes=result.archive_size_bytes,
+        media_file_count=result.media_file_count,
+        checksum=result.checksum,
+        retention=BackupRetentionSummary(
+            keep_last=2,
+            successful_before=3,
+            successful_after=2,
+            removed_count=1,
+            failed_archive_count=0,
+            cleanup_failed=False,
+        ),
+    )
+
+    admin = build_admin(
+        1001,
+    )
+
+    bot = build_bot()
+
+    admins = build_admin_reader(
+        [
+            admin,
+        ]
+    )
+
+    delivery = TelegramBackupDelivery(
+        bot=bot,
+        admins=admins,
+    )
+
+    await delivery.deliver(
+        result,
+    )
+
+    call = bot.send_document.await_args
+
+    assert call is not None
+
+    caption = call.kwargs["caption"]
+
+    assert "بکاپ خودکار با موفقیت انجام شد" in caption
+
+    assert "🧹 <b>نگهداری بکاپ‌ها</b>" in caption
+
+    assert "🎯 حد نگهداری: <b>2</b>" in caption
+
+    assert "🗑 حذف‌شده: <b>1</b>" in caption
+
+    assert "📦 نسخه‌های باقی‌مانده: <b>2</b>" in caption
+
+    assert "0.0s" not in caption
+
+    assert "ثانیه" in caption
