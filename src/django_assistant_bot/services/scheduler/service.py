@@ -26,6 +26,7 @@ from django_assistant_bot.services.backup import (
     BackupExecutionError,
     BackupHistoryError,
     BackupResult,
+    BotDisabledError,
     ProjectBackupDisabledError,
 )
 
@@ -35,6 +36,11 @@ logger = logging.getLogger(
 
 
 JOB_PREFIX = "project-backup:"
+
+
+# =========================================================
+# DEPENDENCY CONTRACTS
+# =========================================================
 
 
 class ProjectReader(Protocol):
@@ -64,10 +70,19 @@ class BackupRunner(Protocol):
 
 
 class BackupDelivery(Protocol):
+    """
+    Delivery backend contract required by scheduler.
+    """
+
     async def deliver(
         self,
         result: BackupResult,
     ) -> object: ...
+
+
+# =========================================================
+# SERVICE
+# =========================================================
 
 
 class BackupSchedulerService:
@@ -79,6 +94,8 @@ class BackupSchedulerService:
     - create/update project jobs
     - remove disabled project jobs
     - execute backups through BackupCoordinator
+    - pause automatic activity while the bot is disabled
+    - resume jobs after the bot is enabled
     - prevent scheduler concerns from leaking into handlers
     """
 
@@ -90,19 +107,36 @@ class BackupSchedulerService:
         scheduler: AsyncIOScheduler | None = None,
     ) -> None:
         self._projects = projects
+
         self._backups = backups
+
         self._delivery: BackupDelivery | None = None
+
         self._scheduler = scheduler if scheduler is not None else AsyncIOScheduler()
 
         self._started = False
+
+        self._paused = False
+
+    @property
+    def is_started(self) -> bool:
+        """
+        Return whether APScheduler is currently running.
+        """
+
+        return self._started
 
     # =====================================================
     # LIFECYCLE
     # =====================================================
 
-    def start(self) -> None:
+    def start(
+        self,
+    ) -> None:
         """
         Start APScheduler and restore project jobs.
+
+        Safe to call more than once.
         """
 
         if self._started:
@@ -111,6 +145,8 @@ class BackupSchedulerService:
         self._scheduler.start()
 
         self._started = True
+
+        self._paused = False
 
         self.sync_all()
 
@@ -122,9 +158,9 @@ class BackupSchedulerService:
         wait: bool = False,
     ) -> None:
         """
-        Stop APScheduler.
+        Stop APScheduler completely.
 
-        Safe to call more than once.
+        Used during application shutdown.
         """
 
         if not self._started:
@@ -136,18 +172,67 @@ class BackupSchedulerService:
 
         self._started = False
 
+        self._paused = False
+
         logger.info("Backup scheduler stopped.")
+
+    def pause(
+        self,
+    ) -> None:
+        """
+        Pause all scheduled execution.
+
+        Existing jobs remain registered so they can resume
+        without rebuilding scheduler state.
+
+        Safe to call when scheduler has not started.
+        """
+
+        if not self._started:
+            return
+
+        if self._paused:
+            return
+
+        self._scheduler.pause()
+
+        self._paused = True
+
+        logger.info("Backup scheduler paused.")
+
+    def resume(
+        self,
+    ) -> None:
+        """
+        Resume scheduled execution.
+
+        If the scheduler has not started yet, start it and
+        restore persisted jobs automatically.
+        """
+
+        if not self._started:
+            self.start()
+
+            return
+
+        if not self._paused:
+            return
+
+        self._scheduler.resume()
+
+        self._paused = False
+
+        logger.info("Backup scheduler resumed.")
 
     # =====================================================
     # SYNCHRONIZATION
     # =====================================================
 
-    def sync_all(self) -> None:
+    def sync_all(
+        self,
+    ) -> None:
         """
         Synchronize all project schedules.
-
-        This is used during startup so jobs are restored
-        from persisted project configuration.
         """
 
         projects = self._projects.list_projects()
@@ -160,8 +245,6 @@ class BackupSchedulerService:
 
             self.sync_project(project)
 
-        # Remove stale jobs whose projects no longer exist
-        # or no longer have scheduling enabled.
         for job in list(self._scheduler.get_jobs()):
             if not job.id.startswith(JOB_PREFIX):
                 continue
@@ -200,7 +283,7 @@ class BackupSchedulerService:
         )
 
         logger.info(
-            "Scheduled backup for project %s every %s %s.",
+            ("Scheduled backup for project %s " "every %s %s."),
             project.id,
             project.schedule.interval,
             project.schedule.unit.value,
@@ -212,8 +295,6 @@ class BackupSchedulerService:
     ) -> None:
         """
         Remove a project's scheduled backup job.
-
-        Missing jobs are treated as already removed.
         """
 
         job_id = self._job_id(project_id)
@@ -225,7 +306,7 @@ class BackupSchedulerService:
             return
 
         logger.info(
-            "Removed scheduled backup job for project %s.",
+            ("Removed scheduled backup job " "for project %s."),
             project_id,
         )
 
@@ -238,11 +319,12 @@ class BackupSchedulerService:
         project_id: str,
     ) -> None:
         """
-        Execute scheduled backup without blocking event loop.
+        Execute scheduled backup without blocking the event
+        loop.
         """
 
         logger.info(
-            "Starting scheduled backup for project %s.",
+            ("Starting scheduled backup " "for project %s."),
             project_id,
         )
 
@@ -252,40 +334,51 @@ class BackupSchedulerService:
                 project_id,
             )
 
+        except BotDisabledError:
+            logger.info(
+                ("Scheduled backup skipped because " "the application is disabled.")
+            )
+
         except ProjectBackupDisabledError:
             logger.info(
-                "Scheduled backup skipped because project %s " "is disabled.",
+                ("Scheduled backup skipped because " "project %s is disabled."),
                 project_id,
             )
 
         except BackupDisabledError:
             logger.info(
-                "Scheduled backup skipped because global " "backups are disabled."
+                ("Scheduled backup skipped because " "global backups are disabled.")
             )
 
         except BackupAlreadyRunningError:
             logger.info(
-                "Scheduled backup skipped because project %s "
-                "already has a running backup.",
+                (
+                    "Scheduled backup skipped because "
+                    "project %s already has a running "
+                    "backup."
+                ),
                 project_id,
             )
 
         except BackupHistoryError:
             logger.exception(
-                "Scheduled backup for project %s completed "
-                "but history persistence failed.",
+                (
+                    "Scheduled backup for project %s "
+                    "completed but history persistence "
+                    "failed."
+                ),
                 project_id,
             )
 
         except BackupExecutionError:
             logger.exception(
-                "Scheduled backup failed for project %s.",
+                ("Scheduled backup failed " "for project %s."),
                 project_id,
             )
 
         except Exception:
             logger.exception(
-                "Unexpected scheduled backup failure for " "project %s.",
+                ("Unexpected scheduled backup failure " "for project %s."),
                 project_id,
             )
 
@@ -296,12 +389,16 @@ class BackupSchedulerService:
 
                 except Exception:
                     logger.exception(
-                        "Scheduled backup for project %s succeeded "
-                        "but delivery failed.",
+                        (
+                            "Scheduled backup for project "
+                            "%s succeeded but delivery "
+                            "failed."
+                        ),
                         project_id,
                     )
+
             logger.info(
-                "Scheduled backup completed for project %s.",
+                ("Scheduled backup completed " "for project %s."),
                 project_id,
             )
 
@@ -311,9 +408,6 @@ class BackupSchedulerService:
     ) -> None:
         """
         Attach runtime backup delivery backend.
-
-        Delivery depends on Telegram Bot instance, which is
-        created after application bootstrap.
         """
 
         self._delivery = delivery
@@ -338,11 +432,6 @@ class BackupSchedulerService:
     def _build_trigger(
         project: ProjectSchema,
     ) -> IntervalTrigger:
-        """
-        Convert project schedule configuration into
-        APScheduler IntervalTrigger.
-        """
-
         interval = project.schedule.interval
 
         unit = project.schedule.unit
@@ -362,7 +451,7 @@ class BackupSchedulerService:
                 days=interval,
             )
 
-        raise ValueError(f"Unsupported schedule unit: {unit}")
+        raise ValueError("Unsupported schedule unit: " f"{unit}")
 
 
 __all__ = [

@@ -15,11 +15,21 @@ from django_assistant_bot.services.backup.exceptions import (
     BackupExecutionError,
     BackupHistoryError,
     BackupValidationError,
+    BotDisabledError,
     ChecksumError,
     DatabaseBackupError,
     MediaBackupError,
-    RetentionError,
     ProjectBackupDisabledError,
+    RetentionError,
+)
+from django_assistant_bot.services.backup.history import (
+    BackupHistoryService,
+)
+from django_assistant_bot.services.backup.history_exceptions import (
+    BackupHistoryNotFoundError,
+    BackupHistoryPersistenceError,
+    BackupHistoryServiceError,
+    BackupHistoryValidationError,
 )
 from django_assistant_bot.services.backup.models import (
     ArchiveResult,
@@ -31,15 +41,6 @@ from django_assistant_bot.services.backup.models import (
 from django_assistant_bot.services.backup.service import (
     BackupService,
 )
-from django_assistant_bot.services.backup.history import (
-    BackupHistoryService,
-)
-from django_assistant_bot.services.backup.history_exceptions import (
-    BackupHistoryNotFoundError,
-    BackupHistoryPersistenceError,
-    BackupHistoryServiceError,
-    BackupHistoryValidationError,
-)
 
 __all__ = [
     "ArchiveError",
@@ -49,23 +50,24 @@ __all__ = [
     "BackupCoordinatorError",
     "BackupDisabledError",
     "BackupError",
-    "ProjectBackupDisabledError",
     "BackupExecutionError",
     "BackupHistoryError",
+    "BackupHistoryNotFoundError",
+    "BackupHistoryPersistenceError",
+    "BackupHistoryService",
+    "BackupHistoryServiceError",
+    "BackupHistoryValidationError",
     "BackupResult",
     "BackupService",
     "BackupStatus",
     "BackupValidationError",
+    "BotDisabledError",
     "ChecksumError",
     "ChecksumResult",
     "DatabaseBackupError",
     "DatabaseBackupResult",
     "MediaBackupError",
     "MediaBackupResult",
+    "ProjectBackupDisabledError",
     "RetentionError",
-    "BackupHistoryNotFoundError",
-    "BackupHistoryPersistenceError",
-    "BackupHistoryService",
-    "BackupHistoryServiceError",
-    "BackupHistoryValidationError",
 ]

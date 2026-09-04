@@ -20,18 +20,19 @@ from django_assistant_bot.schemas.backup import (
 from django_assistant_bot.schemas.project import (
     ProjectSchema,
 )
-from django_assistant_bot.services.backup.models import (
-    BackupResult,
-)
-from django_assistant_bot.services.backup.service import (
-    BackupService,
-)
 from django_assistant_bot.services.backup.exceptions import (
     BackupAlreadyRunningError,
     BackupDisabledError,
     BackupExecutionError,
     BackupHistoryError,
+    BotDisabledError,
     ProjectBackupDisabledError,
+)
+from django_assistant_bot.services.backup.models import (
+    BackupResult,
+)
+from django_assistant_bot.services.backup.service import (
+    BackupService,
 )
 
 # =========================================================
@@ -108,10 +109,10 @@ def create_backup_service(
     """
 
     return BackupService(
-        backup_directory=(settings.backup_directory),
-        compression_level=(settings.compression_level),
-        retention_enabled=(settings.retention_enabled),
-        keep_last=(settings.retention_keep_last),
+        backup_directory=settings.backup_directory,
+        compression_level=settings.compression_level,
+        retention_enabled=settings.retention_enabled,
+        keep_last=settings.retention_keep_last,
     )
 
 
@@ -126,7 +127,8 @@ class BackupCoordinator:
 
     Responsibilities:
     - load project configuration
-    - load application backup settings
+    - load application settings
+    - reject execution when the bot is globally disabled
     - reject backups when globally disabled
     - prevent concurrent backups for the same project
     - execute BackupService
@@ -143,7 +145,7 @@ class BackupCoordinator:
         projects: ProjectReader,
         settings: SettingsReader,
         history: BackupHistoryWriter,
-        runner_factory: BackupRunnerFactory = (create_backup_service),
+        runner_factory: BackupRunnerFactory = create_backup_service,
     ) -> None:
         self._projects = projects
 
@@ -157,9 +159,9 @@ class BackupCoordinator:
 
         self._running_projects_lock = Lock()
 
-    # -----------------------------------------------------
+    # =====================================================
     # PUBLIC API
-    # -----------------------------------------------------
+    # =====================================================
 
     def run(
         self,
@@ -168,8 +170,8 @@ class BackupCoordinator:
         """
         Execute a complete backup operation for a project.
 
-        Only one backup for the same project may run at
-        the same time.
+        Only one backup for the same project may run at the
+        same time.
 
         Different projects may be backed up concurrently.
         """
@@ -210,22 +212,37 @@ class BackupCoordinator:
         with self._running_projects_lock:
             return normalized_project_id in self._running_projects
 
-    # -----------------------------------------------------
+    # =====================================================
     # EXECUTION
-    # -----------------------------------------------------
+    # =====================================================
 
-    def _run_backup(self, project_id: str) -> BackupResult:
+    def _run_backup(
+        self,
+        project_id: str,
+    ) -> BackupResult:
+        """
+        Run one backup after validating global and project
+        application state.
+        """
+
+        settings = self._settings.get_settings()
+
+        # Global bot state is the highest-level switch.
+        #
+        # When disabled, no backup activity is allowed,
+        # regardless of backup or project configuration.
+        if not settings.bot_enabled:
+            raise BotDisabledError("Application activity is disabled.")
+
+        if not settings.backup_enabled:
+            raise BackupDisabledError("Backup functionality is disabled.")
+
         project = self._projects.get_project(
             project_id,
         )
 
         if not project.enabled:
             raise ProjectBackupDisabledError("Project is disabled: " f"{project.name}")
-
-        settings = self._settings.get_settings()
-
-        if not settings.backup_enabled:
-            raise BackupDisabledError("Backup functionality is disabled.")
 
         started_at = datetime.now(
             timezone.utc,
@@ -265,14 +282,18 @@ class BackupCoordinator:
 
         return result
 
-    # -----------------------------------------------------
+    # =====================================================
     # HISTORY
-    # -----------------------------------------------------
+    # =====================================================
 
     def _record_success(
         self,
         result: BackupResult,
     ) -> None:
+        """
+        Persist successful backup history.
+        """
+
         data = BackupHistoryCreateSchema(
             project_id=result.project_id,
             status=BackupStatus.SUCCESS,
@@ -306,6 +327,14 @@ class BackupCoordinator:
         started_at: datetime,
         finished_at: datetime,
     ) -> None:
+        """
+        Persist a genuine backup execution failure.
+
+        Validation/state-based skips such as disabled bot,
+        disabled backups or disabled projects never reach
+        this method.
+        """
+
         data = BackupHistoryCreateSchema(
             project_id=project.id,
             status=BackupStatus.FAILED,
@@ -337,9 +366,9 @@ class BackupCoordinator:
                 f"{history_error}"
             )
 
-    # -----------------------------------------------------
+    # =====================================================
     # CONCURRENCY
-    # -----------------------------------------------------
+    # =====================================================
 
     def _acquire_project(
         self,

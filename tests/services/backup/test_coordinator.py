@@ -30,20 +30,18 @@ from django_assistant_bot.schemas.project import (
     ProjectSchema,
     ScheduleSchema,
 )
-from django_assistant_bot.services.backup.coordinator import (
-    BackupCoordinator,
-)
-
-from django_assistant_bot.services.backup.models import (
-    BackupResult,
-    ChecksumResult,
-)
-from django_assistant_bot.services.backup.exceptions import (
+from django_assistant_bot.services.backup import (
     BackupAlreadyRunningError,
+    BackupCoordinator,
     BackupDisabledError,
     BackupExecutionError,
     BackupHistoryError,
+    BotDisabledError,
     ProjectBackupDisabledError,
+)
+from django_assistant_bot.services.backup.models import (
+    BackupResult,
+    ChecksumResult,
 )
 
 # =========================================================
@@ -167,7 +165,7 @@ class BlockingBackupRunner:
         if not self.release.wait(
             timeout=5,
         ):
-            raise RuntimeError("Timed out waiting for test release.")
+            raise RuntimeError("Timed out waiting " "for test release.")
 
         return self.result
 
@@ -225,9 +223,11 @@ def build_project(
 def build_settings(
     tmp_path: Path,
     *,
+    bot_enabled: bool = True,
     backup_enabled: bool = True,
 ) -> AppSettingsSchema:
     return AppSettingsSchema(
+        bot_enabled=bot_enabled,
         backup_enabled=backup_enabled,
         backup_directory=(tmp_path / "backups"),
         compression_level=7,
@@ -380,7 +380,59 @@ def test_successful_backup_records_history(
 
 
 # =========================================================
-# GLOBAL DISABLE
+# GLOBAL BOT DISABLE
+# =========================================================
+
+
+def test_bot_disabled_prevents_execution(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    settings = build_settings(
+        tmp_path,
+        bot_enabled=False,
+    )
+
+    runner = FakeBackupRunner(
+        result=build_result(
+            tmp_path,
+        ),
+    )
+
+    (
+        coordinator,
+        history,
+        factory,
+    ) = build_coordinator(
+        project=project,
+        settings=settings,
+        runner=runner,
+    )
+
+    with pytest.raises(
+        BotDisabledError,
+        match="disabled",
+    ):
+        coordinator.run(
+            project.id,
+        )
+
+    assert runner.projects == []
+
+    assert factory.settings == []
+
+    assert history.records == []
+
+    assert not coordinator.is_running(
+        project.id,
+    )
+
+
+# =========================================================
+# GLOBAL BACKUP DISABLE
 # =========================================================
 
 

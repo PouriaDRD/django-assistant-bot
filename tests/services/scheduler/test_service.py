@@ -26,6 +26,9 @@ from django_assistant_bot.schemas.project import (
     ProjectSchema,
     ScheduleSchema,
 )
+from django_assistant_bot.services.backup import (
+    BotDisabledError,
+)
 from django_assistant_bot.services.backup.models import (
     BackupResult,
     ChecksumResult,
@@ -314,6 +317,7 @@ def test_start_is_idempotent() -> None:
     )
 
     service.start()
+
     service.start()
 
     scheduler.start.assert_called_once_with()
@@ -338,6 +342,7 @@ def test_stop_is_idempotent() -> None:
     service.start()
 
     service.stop()
+
     service.stop()
 
     scheduler.shutdown.assert_called_once_with(
@@ -363,7 +368,7 @@ async def test_scheduled_job_runs_backup_in_thread(
     to_thread = AsyncMock()
 
     monkeypatch.setattr(
-        ("django_assistant_bot.services.scheduler.service." "asyncio.to_thread"),
+        ("django_assistant_bot.services." "scheduler.service.asyncio.to_thread"),
         to_thread,
     )
 
@@ -373,6 +378,44 @@ async def test_scheduled_job_runs_backup_in_thread(
         backups.run,
         "project-1",
     )
+
+
+@pytest.mark.asyncio
+async def test_scheduled_backup_is_skipped_when_bot_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backups = Mock()
+
+    delivery = FakeDelivery()
+
+    service = build_service(
+        backups=backups,
+    )
+
+    service.set_delivery(
+        delivery,
+    )
+
+    to_thread = AsyncMock(
+        side_effect=BotDisabledError("Application activity is disabled.")
+    )
+
+    monkeypatch.setattr(
+        ("django_assistant_bot.services." "scheduler.service.asyncio.to_thread"),
+        to_thread,
+    )
+
+    # BotDisabledError represents normal application state.
+    # It must be swallowed by the scheduler instead of
+    # escaping as a failed APScheduler job.
+    await service._run_project_backup("project-1")
+
+    to_thread.assert_awaited_once_with(
+        backups.run,
+        "project-1",
+    )
+
+    delivery.deliver.assert_not_awaited()
 
 
 # =========================================================
@@ -406,7 +449,7 @@ async def test_scheduled_backup_delivers_result(
     )
 
     monkeypatch.setattr(
-        ("django_assistant_bot.services.scheduler.service." "asyncio.to_thread"),
+        ("django_assistant_bot.services." "scheduler.service.asyncio.to_thread"),
         to_thread,
     )
 
@@ -452,11 +495,12 @@ async def test_scheduled_backup_survives_delivery_failure(
     )
 
     monkeypatch.setattr(
-        ("django_assistant_bot.services.scheduler.service." "asyncio.to_thread"),
+        ("django_assistant_bot.services." "scheduler.service.asyncio.to_thread"),
         to_thread,
     )
 
-    # Delivery failure must not escape from the scheduler job.
+    # Delivery failure must not escape from the
+    # scheduler job.
     await service._run_project_backup(
         result.project_id,
     )
@@ -469,3 +513,144 @@ async def test_scheduled_backup_survives_delivery_failure(
     delivery.deliver.assert_awaited_once_with(
         result,
     )
+
+
+def test_pause_pauses_started_scheduler() -> None:
+    projects = Mock()
+
+    projects.list_projects.return_value = []
+
+    scheduler = Mock(
+        spec=AsyncIOScheduler,
+    )
+
+    scheduler.get_jobs.return_value = []
+
+    service = build_service(
+        projects=projects,
+        scheduler=scheduler,
+    )
+
+    service.start()
+
+    service.pause()
+
+    scheduler.pause.assert_called_once_with()
+
+    assert service.is_started is True
+
+
+def test_pause_before_start_is_safe() -> None:
+    scheduler = Mock(
+        spec=AsyncIOScheduler,
+    )
+
+    service = build_service(
+        scheduler=scheduler,
+    )
+
+    service.pause()
+
+    scheduler.pause.assert_not_called()
+
+    assert service.is_started is False
+
+
+def test_resume_starts_scheduler_when_not_started() -> None:
+    projects = Mock()
+
+    projects.list_projects.return_value = []
+
+    scheduler = Mock(
+        spec=AsyncIOScheduler,
+    )
+
+    scheduler.get_jobs.return_value = []
+
+    service = build_service(
+        projects=projects,
+        scheduler=scheduler,
+    )
+
+    service.resume()
+
+    scheduler.start.assert_called_once_with()
+
+    scheduler.resume.assert_not_called()
+
+    assert service.is_started is True
+
+
+def test_resume_resumes_paused_scheduler() -> None:
+    projects = Mock()
+
+    projects.list_projects.return_value = []
+
+    scheduler = Mock(
+        spec=AsyncIOScheduler,
+    )
+
+    scheduler.get_jobs.return_value = []
+
+    service = build_service(
+        projects=projects,
+        scheduler=scheduler,
+    )
+
+    service.start()
+
+    service.pause()
+
+    service.resume()
+
+    scheduler.resume.assert_called_once_with()
+
+    assert service.is_started is True
+
+
+def test_pause_is_idempotent() -> None:
+    projects = Mock()
+
+    projects.list_projects.return_value = []
+
+    scheduler = Mock(
+        spec=AsyncIOScheduler,
+    )
+
+    scheduler.get_jobs.return_value = []
+
+    service = build_service(
+        projects=projects,
+        scheduler=scheduler,
+    )
+
+    service.start()
+
+    service.pause()
+
+    service.pause()
+
+    scheduler.pause.assert_called_once_with()
+
+
+def test_resume_is_idempotent_when_running() -> None:
+    projects = Mock()
+
+    projects.list_projects.return_value = []
+
+    scheduler = Mock(
+        spec=AsyncIOScheduler,
+    )
+
+    scheduler.get_jobs.return_value = []
+
+    service = build_service(
+        projects=projects,
+        scheduler=scheduler,
+    )
+
+    service.start()
+
+    service.resume()
+
+    scheduler.resume.assert_not_called()

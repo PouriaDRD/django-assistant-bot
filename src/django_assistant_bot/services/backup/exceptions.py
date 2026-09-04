@@ -52,6 +52,12 @@ class BackupCoordinatorError(BackupError):
     """
 
 
+class BotDisabledError(BackupCoordinatorError):
+    """
+    Application activity is globally disabled.
+    """
+
+
 class BackupDisabledError(BackupCoordinatorError):
     """
     Global backup functionality is disabled.

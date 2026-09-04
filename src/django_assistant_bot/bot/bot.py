@@ -29,8 +29,14 @@ from django_assistant_bot.bot.handlers.projects import (
 from django_assistant_bot.bot.handlers.scheduler import (
     router as scheduler_router,
 )
+from django_assistant_bot.bot.handlers.settings import (
+    router as settings_router,
+)
 from django_assistant_bot.bot.middlewares.auth import (
     AdminAuthMiddleware,
+)
+from django_assistant_bot.bot.middlewares.bot_enabled import (
+    BotEnabledMiddleware,
 )
 
 
@@ -65,6 +71,10 @@ class TelegramBot:
             admin_service=(context.admins),
         )
 
+        self._bot_enabled_middleware = BotEnabledMiddleware(
+            settings=(context.settings),
+        )
+
         self._configure()
 
     @property
@@ -86,12 +96,24 @@ class TelegramBot:
         Configure middlewares, routers and dependencies.
         """
 
+        # -------------------------------------------------
+        # MIDDLEWARES
+        # -------------------------------------------------
+
         self._dispatcher.message.middleware(
             self._auth_middleware,
         )
 
+        self._dispatcher.message.middleware(
+            self._bot_enabled_middleware,
+        )
+
         self._dispatcher.callback_query.middleware(
             self._auth_middleware,
+        )
+
+        self._dispatcher.callback_query.middleware(
+            self._bot_enabled_middleware,
         )
 
         # -------------------------------------------------
@@ -100,6 +122,10 @@ class TelegramBot:
 
         self._dispatcher.include_router(
             common_router,
+        )
+
+        self._dispatcher.include_router(
+            settings_router,
         )
 
         self._dispatcher.include_router(

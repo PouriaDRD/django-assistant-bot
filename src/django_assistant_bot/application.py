@@ -23,6 +23,10 @@ from django_assistant_bot.utils.logger import (
 async def run() -> None:
     """
     Start the Django Assistant Bot application.
+
+    Telegram polling always remains available so an
+    authorized administrator can re-enable the application
+    after it has been globally disabled.
     """
 
     setup_logging()
@@ -32,19 +36,13 @@ async def run() -> None:
     )
 
     bootstrap = bootstrap_application()
+
     context = bootstrap.context
 
     telegram_bot: TelegramBot | None = None
 
-    scheduler_started = False
-
     try:
         app_settings = context.settings.get_settings()
-
-        if not app_settings.bot_enabled:
-            logger.warning("Telegram bot is disabled.")
-
-            return
 
         # -------------------------------------------------
         # TELEGRAM BOT
@@ -75,9 +73,17 @@ async def run() -> None:
         # SCHEDULER
         # -------------------------------------------------
 
-        context.scheduler.start()
+        if app_settings.bot_enabled:
+            context.scheduler.start()
 
-        scheduler_started = True
+        else:
+            logger.warning(
+                (
+                    "Application is disabled. "
+                    "Telegram polling remains active "
+                    "for re-enabling."
+                )
+            )
 
         # -------------------------------------------------
         # TELEGRAM
@@ -95,7 +101,7 @@ async def run() -> None:
     finally:
         logger.info("Stopping Django Assistant Bot...")
 
-        if scheduler_started:
+        if context.scheduler.is_started:
             context.scheduler.stop(
                 wait=False,
             )
