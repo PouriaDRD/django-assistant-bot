@@ -327,8 +327,7 @@ class BackupSchedulerService:
         project_id: str,
     ) -> None:
         """
-        Execute scheduled backup without blocking the event
-        loop.
+        Execute scheduled backup without blocking the event loop.
         """
 
         logger.info(
@@ -342,10 +341,23 @@ class BackupSchedulerService:
                 project_id,
             )
 
+        except asyncio.CancelledError:
+            logger.info(
+                (
+                    "Scheduled backup for project %s "
+                    "was cancelled during application shutdown."
+                ),
+                project_id,
+            )
+
+            return
+
         except BotDisabledError:
             logger.info(
                 ("Scheduled backup skipped because " "the application is disabled.")
             )
+
+            return
 
         except ProjectBackupDisabledError:
             logger.info(
@@ -353,30 +365,36 @@ class BackupSchedulerService:
                 project_id,
             )
 
+            return
+
         except BackupDisabledError:
             logger.info(
                 ("Scheduled backup skipped because " "global backups are disabled.")
             )
 
+            return
+
         except BackupAlreadyRunningError:
             logger.info(
                 (
                     "Scheduled backup skipped because "
-                    "project %s already has a running "
-                    "backup."
+                    "project %s already has a running backup."
                 ),
                 project_id,
             )
+
+            return
 
         except BackupHistoryError:
             logger.exception(
                 (
                     "Scheduled backup for project %s "
-                    "completed but history persistence "
-                    "failed."
+                    "completed but history persistence failed."
                 ),
                 project_id,
             )
+
+            return
 
         except BackupExecutionError:
             logger.exception(
@@ -384,31 +402,44 @@ class BackupSchedulerService:
                 project_id,
             )
 
+            return
+
         except Exception:
             logger.exception(
                 ("Unexpected scheduled backup failure " "for project %s."),
                 project_id,
             )
 
-        else:
-            if self._delivery is not None:
-                try:
-                    await self._delivery.deliver(result)
+            return
 
-                except Exception:
-                    logger.exception(
-                        (
-                            "Scheduled backup for project "
-                            "%s succeeded but delivery "
-                            "failed."
-                        ),
-                        project_id,
-                    )
+        if self._delivery is not None:
+            try:
+                await self._delivery.deliver(result)
 
-            logger.info(
-                ("Scheduled backup completed " "for project %s."),
-                project_id,
-            )
+            except asyncio.CancelledError:
+                logger.info(
+                    (
+                        "Scheduled backup delivery for project "
+                        "%s was cancelled during application shutdown."
+                    ),
+                    project_id,
+                )
+
+                return
+
+            except Exception:
+                logger.exception(
+                    (
+                        "Scheduled backup for project "
+                        "%s succeeded but delivery failed."
+                    ),
+                    project_id,
+                )
+
+        logger.info(
+            ("Scheduled backup completed " "for project %s."),
+            project_id,
+        )
 
     def set_delivery(
         self,
