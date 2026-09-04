@@ -157,6 +157,72 @@ def test_list_backup_history_for_project(
     assert len(histories) == 2
 
 
+def test_list_all_backup_history_orders_newest_first(
+    session_manager: SessionManager,
+) -> None:
+    first_project_id = create_project(
+        session_manager,
+    )
+
+    project_repository = ProjectRepository(
+        session_manager,
+    )
+
+    second_project = project_repository.create(
+        ProjectCreateSchema(
+            name="second-backup-test",
+            database=DatabaseSchema(
+                path=Path("/srv/project-two/db.sqlite3"),
+            ),
+            media=MediaSchema(
+                path=Path("/srv/project-two/media"),
+            ),
+            schedule=ScheduleSchema(
+                interval=1,
+                unit=ScheduleUnit.HOURS,
+            ),
+        )
+    )
+
+    repository = BackupHistoryRepository(
+        session_manager,
+    )
+
+    now = datetime.now(
+        timezone.utc,
+    )
+
+    older = repository.create(
+        BackupHistoryCreateSchema(
+            project_id=first_project_id,
+            status=BackupStatus.SUCCESS,
+            started_at=(
+                now
+                - timedelta(
+                    minutes=5,
+                )
+            ),
+        )
+    )
+
+    newer = repository.create(
+        BackupHistoryCreateSchema(
+            project_id=second_project.id,
+            status=BackupStatus.FAILED,
+            error_message="Test failure",
+            started_at=now,
+        )
+    )
+
+    histories = repository.list_all()
+
+    assert len(histories) == 2
+
+    assert histories[0].id == newer.id
+
+    assert histories[1].id == older.id
+
+
 # =========================================================
 # GET BY ID
 # =========================================================
@@ -296,3 +362,49 @@ def test_get_latest_returns_none_when_history_is_empty(
     result = repository.get_latest()
 
     assert result is None
+
+
+def test_list_all_backup_history_supports_pagination(
+    session_manager: SessionManager,
+) -> None:
+    project_id = create_project(
+        session_manager,
+    )
+
+    repository = BackupHistoryRepository(
+        session_manager,
+    )
+
+    now = datetime.now(
+        timezone.utc,
+    )
+
+    for index in range(3):
+        repository.create(
+            BackupHistoryCreateSchema(
+                project_id=project_id,
+                status=BackupStatus.SUCCESS,
+                started_at=(
+                    now
+                    + timedelta(
+                        minutes=index,
+                    )
+                ),
+            )
+        )
+
+    first_page = repository.list_all(
+        limit=2,
+        offset=0,
+    )
+
+    second_page = repository.list_all(
+        limit=2,
+        offset=2,
+    )
+
+    assert len(first_page) == 2
+
+    assert len(second_page) == 1
+
+    assert first_page[0].started_at >= first_page[1].started_at

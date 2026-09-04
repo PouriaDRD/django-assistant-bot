@@ -14,11 +14,7 @@ from unittest.mock import (
 import pytest
 from aiogram.types import Message
 
-from django_assistant_bot.bot.handlers.backups.history import (
-    backup_history_detail_callback,
-    backup_history_menu_callback,
-    backup_history_project_callback,
-)
+
 from django_assistant_bot.database.models.enums import (
     BackupStatus,
     DatabaseType,
@@ -39,6 +35,12 @@ from django_assistant_bot.services.backup import (
 )
 from django_assistant_bot.services.project import (
     ProjectNotFoundError,
+)
+from django_assistant_bot.bot.handlers.backups.history import (
+    backup_history_all_callback,
+    backup_history_detail_callback,
+    backup_history_menu_callback,
+    backup_history_project_callback,
 )
 
 # =========================================================
@@ -149,8 +151,14 @@ def build_context(
 
     if list_error is not None:
         history_service.list_for_project.side_effect = list_error
+
+        history_service.list_all.side_effect = list_error
     else:
         history_service.list_for_project.return_value = (
+            histories if histories is not None else []
+        )
+
+        history_service.list_all.return_value = (
             histories if histories is not None else []
         )
 
@@ -447,10 +455,11 @@ async def test_history_detail_success(
     )
 
     callback = build_callback(
-        data=("bh:d:" f"{history.id}:0"),
+        data=("bh:d:" f"{history.id}:" "p:" "0"),
     )
 
     context = build_context(
+        project=project,
         history=history,
     )
 
@@ -463,6 +472,10 @@ async def test_history_detail_success(
         history.id,
     )
 
+    context.projects.get_project.assert_called_once_with(
+        project.id,
+    )
+
     call = callback.message.edit_text.await_args
 
     text = call.args[0]
@@ -470,6 +483,8 @@ async def test_history_detail_success(
     assert "جزئیات بکاپ" in text
 
     assert "✅ موفق" in text
+
+    assert "Test Project" in text
 
     assert "checksum-value" in text
 
@@ -500,14 +515,15 @@ async def test_history_detail_failure(
         history_id="history-failed",
         project_id=project.id,
         status=BackupStatus.FAILED,
-        error_message="database unavailable",
+        error_message=("database unavailable"),
     )
 
     callback = build_callback(
-        data=("bh:d:" f"{history.id}:0"),
+        data=("bh:d:" f"{history.id}:" "p:" "0"),
     )
 
     context = build_context(
+        project=project,
         history=history,
     )
 
@@ -520,11 +536,17 @@ async def test_history_detail_failure(
         history.id,
     )
 
+    context.projects.get_project.assert_called_once_with(
+        project.id,
+    )
+
     call = callback.message.edit_text.await_args
 
     text = call.args[0]
 
     assert "❌ ناموفق" in text
+
+    assert "Test Project" in text
 
     assert "database unavailable" in text
 
@@ -732,3 +754,382 @@ async def test_negative_history_detail_page() -> None:
     )
 
     callback.message.edit_text.assert_not_awaited()
+
+
+# =========================================================
+# ALL HISTORY - EMPTY
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_all_history_empty() -> None:
+    callback = build_callback(
+        data="bh:a:0",
+    )
+
+    context = build_context(
+        projects=[],
+        histories=[],
+    )
+
+    await backup_history_all_callback(
+        callback,
+        context,
+    )
+
+    context.backup_history.list_all.assert_called_once_with(
+        limit=6,
+        offset=0,
+    )
+
+    context.projects.list_projects.assert_called_once_with()
+
+    callback.answer.assert_awaited_once_with()
+
+    call = callback.message.edit_text.await_args
+
+    assert "هنوز هیچ بکاپی ثبت نشده است." in call.args[0]
+
+
+# =========================================================
+# ALL HISTORY - FIRST PAGE
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_all_history_first_page(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+        project_id="project-1",
+        name="Project One",
+    )
+
+    histories = [
+        build_history(
+            tmp_path,
+            history_id=f"history-{index}",
+            project_id=project.id,
+        )
+        for index in range(
+            1,
+            6,
+        )
+    ]
+
+    callback = build_callback(
+        data="bh:a:0",
+    )
+
+    context = build_context(
+        projects=[
+            project,
+        ],
+        histories=histories,
+    )
+
+    await backup_history_all_callback(
+        callback,
+        context,
+    )
+
+    context.backup_history.list_all.assert_called_once_with(
+        limit=6,
+        offset=0,
+    )
+
+    call = callback.message.edit_text.await_args
+
+    text = call.args[0]
+
+    assert "همه بکاپ‌ها" in text
+
+    assert "صفحه: <b>1</b>" in text
+
+    assert "Project One" in text
+
+    keyboard = call.kwargs["reply_markup"]
+
+    callback_data = [
+        button.callback_data for row in keyboard.inline_keyboard for button in row
+    ]
+
+    assert not any(value == "bh:a:1" for value in callback_data)
+
+
+# =========================================================
+# ALL HISTORY - NEXT PAGE
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_all_history_first_page_has_next(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    histories = [
+        build_history(
+            tmp_path,
+            history_id=f"history-{index}",
+            project_id=project.id,
+        )
+        for index in range(
+            1,
+            7,
+        )
+    ]
+
+    callback = build_callback(
+        data="bh:a:0",
+    )
+
+    context = build_context(
+        projects=[
+            project,
+        ],
+        histories=histories,
+    )
+
+    await backup_history_all_callback(
+        callback,
+        context,
+    )
+
+    call = callback.message.edit_text.await_args
+
+    keyboard = call.kwargs["reply_markup"]
+
+    callback_data = [
+        button.callback_data for row in keyboard.inline_keyboard for button in row
+    ]
+
+    assert "bh:a:1" in callback_data
+
+
+# =========================================================
+# ALL HISTORY - SECOND PAGE
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_all_history_second_page_has_previous(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    histories = [
+        build_history(
+            tmp_path,
+            history_id="history-6",
+            project_id=project.id,
+        )
+    ]
+
+    callback = build_callback(
+        data="bh:a:1",
+    )
+
+    context = build_context(
+        projects=[
+            project,
+        ],
+        histories=histories,
+    )
+
+    await backup_history_all_callback(
+        callback,
+        context,
+    )
+
+    context.backup_history.list_all.assert_called_once_with(
+        limit=6,
+        offset=5,
+    )
+
+    call = callback.message.edit_text.await_args
+
+    text = call.args[0]
+
+    assert "صفحه: <b>2</b>" in text
+
+    keyboard = call.kwargs["reply_markup"]
+
+    callback_data = [
+        button.callback_data for row in keyboard.inline_keyboard for button in row
+    ]
+
+    assert "bh:a:0" in callback_data
+
+
+# =========================================================
+# ALL HISTORY - DETAIL ORIGIN
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_all_history_detail_callback_uses_all_origin(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    history = build_history(
+        tmp_path,
+        history_id="history-1",
+        project_id=project.id,
+    )
+
+    callback = build_callback(
+        data=("bh:d:" f"{history.id}:" "a:" "0"),
+    )
+
+    context = build_context(
+        project=project,
+        history=history,
+    )
+
+    await backup_history_detail_callback(
+        callback,
+        context,
+    )
+
+    call = callback.message.edit_text.await_args
+
+    keyboard = call.kwargs["reply_markup"]
+
+    callback_data = [
+        button.callback_data for row in keyboard.inline_keyboard for button in row
+    ]
+
+    assert "bh:a:0" in callback_data
+
+    assert f"bh:p:{project.id}:0" not in callback_data
+
+
+# =========================================================
+# ALL HISTORY - PERSISTENCE FAILURE
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_all_history_persistence_failure() -> None:
+    callback = build_callback(
+        data="bh:a:0",
+    )
+
+    context = build_context(
+        list_error=(BackupHistoryPersistenceError("database error")),
+    )
+
+    await backup_history_all_callback(
+        callback,
+        context,
+    )
+
+    callback.answer.assert_awaited_once_with(
+        "دریافت تاریخچه بکاپ ناموفق بود.",
+        show_alert=True,
+    )
+
+    callback.message.edit_text.assert_not_awaited()
+
+
+# =========================================================
+# ALL HISTORY - INVALID PAGE
+# =========================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "data",
+    [
+        "bh:a:",
+        "bh:a:abc",
+    ],
+)
+async def test_invalid_all_history_page_callback(
+    data: str,
+) -> None:
+    callback = build_callback(
+        data=data,
+    )
+
+    context = build_context()
+
+    await backup_history_all_callback(
+        callback,
+        context,
+    )
+
+    callback.answer.assert_awaited_once_with(
+        "اطلاعات صفحه نامعتبر است.",
+        show_alert=True,
+    )
+
+    callback.message.edit_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_negative_all_history_page_callback() -> None:
+    callback = build_callback(
+        data="bh:a:-1",
+    )
+
+    context = build_context()
+
+    await backup_history_all_callback(
+        callback,
+        context,
+    )
+
+    callback.answer.assert_awaited_once_with(
+        "شماره صفحه نامعتبر است.",
+        show_alert=True,
+    )
+
+    callback.message.edit_text.assert_not_awaited()
+
+
+# =========================================================
+# ALL HISTORY - UNKNOWN PROJECT FALLBACK
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_all_history_uses_project_id_when_project_missing(
+    tmp_path: Path,
+) -> None:
+    history = build_history(
+        tmp_path,
+        history_id="history-1",
+        project_id="deleted-project-id",
+    )
+
+    callback = build_callback(
+        data="bh:a:0",
+    )
+
+    context = build_context(
+        projects=[],
+        histories=[
+            history,
+        ],
+    )
+
+    await backup_history_all_callback(
+        callback,
+        context,
+    )
+
+    call = callback.message.edit_text.await_args
+
+    text = call.args[0]
+
+    assert "deleted-project-id" in text

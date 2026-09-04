@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import (
+    select,
+)
+from sqlalchemy.exc import (
+    SQLAlchemyError,
+)
 
 from django_assistant_bot.database.models.backup_history import (
     BackupHistoryModel,
@@ -113,7 +117,8 @@ class BackupHistoryRepository:
         """
         Return the newest backup history record.
 
-        Records are ordered by backup start time descending.
+        Records are ordered by backup start time
+        descending.
         """
 
         try:
@@ -134,11 +139,59 @@ class BackupHistoryRepository:
                 )
 
         except SQLAlchemyError as exc:
-            raise PersistenceError("Could not load latest backup history.") from exc
+            raise PersistenceError(
+                ("Could not load latest " "backup history.")
+            ) from exc
 
     # =====================================================
     # LIST
     # =====================================================
+
+    def list_all(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[BackupHistorySchema]:
+        """
+        Return backup history for all projects.
+
+        Records are ordered newest first.
+        """
+
+        safe_limit = max(
+            1,
+            min(
+                limit,
+                500,
+            ),
+        )
+
+        safe_offset = max(
+            0,
+            offset,
+        )
+
+        try:
+            with self._sessions.session() as session:
+                statement = (
+                    select(BackupHistoryModel)
+                    .order_by(BackupHistoryModel.started_at.desc())
+                    .offset(safe_offset)
+                    .limit(safe_limit)
+                )
+
+                models = list(session.scalars(statement))
+
+                return [
+                    self._to_schema(
+                        model,
+                    )
+                    for model in models
+                ]
+
+        except SQLAlchemyError as exc:
+            raise PersistenceError("Could not load backup history.") from exc
 
     def list_for_project(
         self,
@@ -148,7 +201,8 @@ class BackupHistoryRepository:
         offset: int = 0,
     ) -> list[BackupHistorySchema]:
         """
-        Return project backup history ordered newest first.
+        Return project backup history ordered
+        newest first.
         """
 
         safe_limit = max(

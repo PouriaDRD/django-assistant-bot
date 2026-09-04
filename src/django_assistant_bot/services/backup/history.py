@@ -31,6 +31,32 @@ class BackupHistoryService:
     # LIST
     # =====================================================
 
+    def list_all(
+        self,
+        *,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> list[BackupHistorySchema]:
+        """
+        Return backup history for all projects.
+        """
+
+        self._validate_pagination(
+            limit=limit,
+            offset=offset,
+        )
+
+        try:
+            return self._repository.list_all(
+                limit=limit,
+                offset=offset,
+            )
+
+        except PersistenceError as exc:
+            raise BackupHistoryPersistenceError(
+                "Could not load backup history."
+            ) from exc
+
     def list_for_project(
         self,
         project_id: str,
@@ -47,11 +73,10 @@ class BackupHistoryService:
         if not normalized_project_id:
             raise BackupHistoryValidationError("Project ID cannot be empty.")
 
-        if limit < 1:
-            raise BackupHistoryValidationError("Limit must be greater than zero.")
-
-        if offset < 0:
-            raise BackupHistoryValidationError("Offset cannot be negative.")
+        self._validate_pagination(
+            limit=limit,
+            offset=offset,
+        )
 
         try:
             return self._repository.list_for_project(
@@ -108,7 +133,7 @@ class BackupHistoryService:
 
             if history.project_id != normalized_project_id:
                 raise BackupHistoryNotFoundError(
-                    "Backup history was not found " "for this project."
+                    ("Backup history was not found " "for this project.")
                 )
 
         return history
@@ -119,7 +144,8 @@ class BackupHistoryService:
         """
         Return the newest backup history record.
 
-        None is returned when no backup has been recorded yet.
+        None is returned when no backup has been
+        recorded yet.
         """
 
         try:
@@ -127,8 +153,28 @@ class BackupHistoryService:
 
         except PersistenceError as exc:
             raise BackupHistoryPersistenceError(
-                "Could not load latest backup history."
+                ("Could not load latest " "backup history.")
             ) from exc
+
+    # =====================================================
+    # VALIDATION
+    # =====================================================
+
+    @staticmethod
+    def _validate_pagination(
+        *,
+        limit: int,
+        offset: int,
+    ) -> None:
+        """
+        Validate pagination arguments.
+        """
+
+        if limit < 1:
+            raise BackupHistoryValidationError("Limit must be greater than zero.")
+
+        if offset < 0:
+            raise BackupHistoryValidationError("Offset cannot be negative.")
 
 
 __all__ = [

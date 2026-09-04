@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from html import escape
 from datetime import datetime
+from html import escape
 
 from django_assistant_bot.database.models.enums import (
     BackupStatus,
@@ -16,15 +16,71 @@ from django_assistant_bot.utils.formatters import (
 
 def format_backup_history_menu() -> str:
     """
-    Format backup history project-selection page.
+    Format backup history navigation page.
     """
 
     return (
         "🕘 <b>تاریخچه بکاپ‌ها</b>\n"
         "\n"
-        "برای مشاهده تاریخچه بکاپ، "
-        "پروژه مورد نظر را انتخاب کنید."
+        "می‌توانید همه بکاپ‌ها را مشاهده کنید "
+        "یا تاریخچه یک پروژه خاص را انتخاب کنید."
     )
+
+
+def format_backup_history_all(
+    *,
+    histories: list[BackupHistorySchema],
+    project_names: dict[
+        str,
+        str,
+    ],
+    page: int,
+) -> str:
+    """
+    Format global backup history page.
+    """
+
+    if not histories:
+        return "🕘 <b>همه بکاپ‌ها</b>\n" "\n" "هنوز هیچ بکاپی ثبت نشده است."
+
+    lines: list[str] = [
+        "🕘 <b>همه بکاپ‌ها</b>",
+        "",
+        (f"📄 صفحه: " f"<b>{page + 1}</b>"),
+        "",
+    ]
+
+    for index, history in enumerate(
+        histories,
+        start=1,
+    ):
+        status_icon = "✅" if history.status is BackupStatus.SUCCESS else "❌"
+
+        project_name = project_names.get(
+            history.project_id,
+            history.project_id,
+        )
+
+        safe_project_name = escape(
+            project_name,
+            quote=True,
+        )
+
+        lines.extend(
+            [
+                (f"{status_icon} " f"<b>بکاپ #{index}</b>"),
+                ("📦 " f"{safe_project_name}"),
+                ("🕒 " f"{format_backup_datetime(
+                        history.started_at
+                    )}"),
+                ("🗜 " f"{format_size(
+                        history.archive_size_bytes
+                    )}"),
+                "",
+            ]
+        )
+
+    return "\n".join(lines).rstrip()
 
 
 def format_backup_history_list(
@@ -46,7 +102,8 @@ def format_backup_history_list(
         return (
             "🕘 <b>تاریخچه بکاپ‌ها</b>\n"
             "\n"
-            f"📦 پروژه: <b>{safe_project_name}</b>\n"
+            f"📦 پروژه: "
+            f"<b>{safe_project_name}</b>\n"
             "\n"
             "هنوز هیچ بکاپی برای این پروژه "
             "ثبت نشده است."
@@ -55,8 +112,8 @@ def format_backup_history_list(
     lines: list[str] = [
         "🕘 <b>تاریخچه بکاپ‌ها</b>",
         "",
-        f"📦 پروژه: <b>{safe_project_name}</b>",
-        f"📄 صفحه: <b>{page + 1}</b>",
+        (f"📦 پروژه: " f"<b>{safe_project_name}</b>"),
+        (f"📄 صفحه: " f"<b>{page + 1}</b>"),
         "",
     ]
 
@@ -69,8 +126,12 @@ def format_backup_history_list(
         lines.extend(
             [
                 (f"{status_icon} " f"<b>بکاپ #{index}</b>"),
-                ("🕒 " f"{format_backup_datetime(history.started_at)}"),
-                ("🗜 " f"{format_size(history.archive_size_bytes)}"),
+                ("🕒 " f"{format_backup_datetime(
+                        history.started_at
+                    )}"),
+                ("🗜 " f"{format_size(
+                        history.archive_size_bytes
+                    )}"),
                 "",
             ]
         )
@@ -80,6 +141,8 @@ def format_backup_history_list(
 
 def format_backup_history_details(
     history: BackupHistorySchema,
+    *,
+    project_name: str | None = None,
 ) -> str:
     """
     Format detailed information for one backup.
@@ -92,14 +155,33 @@ def format_backup_history_details(
     lines: list[str] = [
         "🧾 <b>جزئیات بکاپ</b>",
         "",
-        f"وضعیت: <b>{status_text}</b>",
-        ("🕒 شروع: " f"<b>{format_backup_datetime(history.started_at)}</b>"),
+        (f"وضعیت: " f"<b>{status_text}</b>"),
     ]
 
-    if history.finished_at is not None:
-        lines.append(
-            ("🏁 پایان: " f"<b>{format_backup_datetime(history.finished_at)}</b>")
+    if project_name is not None:
+        safe_project_name = escape(
+            project_name,
+            quote=True,
         )
+
+        lines.append(("📦 پروژه: " f"<b>{safe_project_name}</b>"))
+
+    lines.append(("🕒 شروع: " f"<b>{format_backup_datetime(
+                history.started_at
+            )}</b>"))
+
+    if history.finished_at is not None:
+        lines.append(("🏁 پایان: " f"<b>{format_backup_datetime(
+                    history.finished_at
+                )}</b>"))
+
+    if history.finished_at is not None:
+        duration_seconds = max(
+            0,
+            int((history.finished_at - history.started_at).total_seconds()),
+        )
+
+        lines.append(("⏱ مدت: " f"<b>{duration_seconds} ثانیه</b>"))
 
     lines.extend(
         [
@@ -118,7 +200,7 @@ def format_backup_history_details(
 
     if history.checksum_value:
         algorithm = escape(
-            history.checksum_algorithm or "checksum",
+            (history.checksum_algorithm or "checksum"),
             quote=True,
         )
 
@@ -130,7 +212,7 @@ def format_backup_history_details(
         lines.extend(
             [
                 "",
-                f"🔐 <b>{algorithm.upper()}</b>",
+                ("🔐 " f"<b>{algorithm.upper()}</b>"),
                 f"<code>{checksum}</code>",
             ]
         )
@@ -145,7 +227,7 @@ def format_backup_history_details(
             [
                 "",
                 "📍 <b>مسیر فایل</b>",
-                f"<code>{archive_path}</code>",
+                (f"<code>" f"{archive_path}" f"</code>"),
             ]
         )
 
@@ -155,11 +237,14 @@ def format_backup_history_details(
             quote=True,
         )
 
+        if len(error_message) > 300:
+            error_message = f"{error_message[:297]}" "..."
+
         lines.extend(
             [
                 "",
                 "⚠️ <b>خطا</b>",
-                f"<code>{error_message}</code>",
+                (f"<code>" f"{error_message}" f"</code>"),
             ]
         )
 
@@ -174,3 +259,12 @@ def format_backup_datetime(
     """
 
     return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+__all__ = [
+    "format_backup_datetime",
+    "format_backup_history_all",
+    "format_backup_history_details",
+    "format_backup_history_list",
+    "format_backup_history_menu",
+]

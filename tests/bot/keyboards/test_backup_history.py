@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from django_assistant_bot.bot.keyboards.backup_history import (
+    build_backup_history_all_keyboard,
     build_backup_history_detail_keyboard,
     build_backup_history_list_keyboard,
     build_backup_history_projects_keyboard,
@@ -49,7 +50,8 @@ def assert_callback_data_is_valid(
     assert size_bytes <= TELEGRAM_CALLBACK_DATA_MAX_BYTES, (
         "Telegram callback_data exceeded "
         f"{TELEGRAM_CALLBACK_DATA_MAX_BYTES} bytes: "
-        f"{size_bytes} bytes -> {callback_data!r}"
+        f"{size_bytes} bytes -> "
+        f"{callback_data!r}"
     )
 
 
@@ -105,6 +107,13 @@ def test_backup_history_callbacks_fit_telegram_limit(
                 project,
             ]
         ),
+        build_backup_history_all_keyboard(
+            histories=[
+                history,
+            ],
+            page=0,
+            has_next=True,
+        ),
         build_backup_history_list_keyboard(
             project_id=project.id,
             histories=[
@@ -116,6 +125,12 @@ def test_backup_history_callbacks_fit_telegram_limit(
         build_backup_history_detail_keyboard(
             project_id=project.id,
             page=0,
+            origin="a",
+        ),
+        build_backup_history_detail_keyboard(
+            project_id=project.id,
+            page=0,
+            origin="p",
         ),
     ]
 
