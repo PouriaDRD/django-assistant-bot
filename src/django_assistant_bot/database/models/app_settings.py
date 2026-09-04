@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import (
+    datetime,
+    timezone,
+)
 
 from sqlalchemy import (
     Boolean,
@@ -8,7 +11,6 @@ from sqlalchemy import (
     DateTime,
     Enum,
     Integer,
-    String,
     Text,
     text,
 )
@@ -17,13 +19,19 @@ from sqlalchemy.orm import (
     mapped_column,
 )
 
-from django_assistant_bot.database.base import Base
+from django_assistant_bot.database.base import (
+    Base,
+)
 from django_assistant_bot.database.models.enums import (
     CompressionFormat,
 )
 
 
 def utc_now() -> datetime:
+    """
+    Return current UTC datetime.
+    """
+
     return datetime.now(
         timezone.utc,
     )
@@ -49,7 +57,7 @@ class AppSettingsModel(Base):
         ),
         CheckConstraint(
             "retention_keep_last >= 1",
-            name="retention_keep_last_positive",
+            name=("retention_keep_last_positive"),
         ),
     )
 
@@ -77,8 +85,8 @@ class AppSettingsModel(Base):
     backup_directory: Mapped[str] = mapped_column(
         Text,
         nullable=False,
-        default="./backups",
-        server_default=text("'./backups'"),
+        default="data/backups",
+        server_default=text("'data/backups'"),
     )
 
     compression_format: Mapped[CompressionFormat] = mapped_column(
@@ -88,7 +96,7 @@ class AppSettingsModel(Base):
             values_callable=lambda enum: [item.value for item in enum],
         ),
         nullable=False,
-        default=CompressionFormat.ZIP,
+        default=(CompressionFormat.ZIP),
         server_default=text("'zip'"),
     )
 
@@ -128,14 +136,23 @@ class AppSettingsModel(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        DateTime(
+            timezone=True,
+        ),
         nullable=False,
         default=utc_now,
     )
 
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        DateTime(
+            timezone=True,
+        ),
         nullable=False,
         default=utc_now,
         onupdate=utc_now,
     )
+
+
+__all__ = [
+    "AppSettingsModel",
+]

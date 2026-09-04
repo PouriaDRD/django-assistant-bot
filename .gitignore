@@ -1,6 +1,8 @@
 # Virtual environment
 .venv/
 venv/
+.pytest_cache/
+.pytest-tmp/
 
 # Python
 __pycache__/
@@ -17,9 +19,7 @@ data/*.sqlite3-shm
 data/*.sqlite3-wal
 
 # Backups
-backups/
-!src/django_assistant_bot/bot/handlers/backups/
-!tests/bot/handlers/backups/
+data/backups/
 
 # Logs
 logs/

@@ -5,7 +5,9 @@ from pathlib import Path
 from django_assistant_bot.database.models.enums import (
     CompressionFormat,
 )
-from django_assistant_bot.database.session import SessionManager
+from django_assistant_bot.database.session import (
+    SessionManager,
+)
 from django_assistant_bot.repositories.app_settings import (
     AppSettingsRepository,
 )
@@ -24,18 +26,21 @@ def test_settings_are_created_automatically(
     settings = repository.get()
 
     assert settings.bot_enabled is True
+
     assert settings.backup_enabled is True
 
-    assert settings.backup_directory == Path("./backups")
+    assert settings.backup_directory == Path("data/backups")
 
     assert settings.compression_format is CompressionFormat.ZIP
 
     assert settings.compression_level == 6
 
     assert settings.retention_enabled is True
+
     assert settings.retention_keep_last == 10
 
     assert settings.proxy_enabled is False
+
     assert settings.proxy_url == ""
 
 
@@ -47,6 +52,7 @@ def test_settings_singleton_is_reused(
     )
 
     first = repository.get()
+
     second = repository.get()
 
     assert first == second
@@ -65,17 +71,35 @@ def test_update_settings(
             compression_level=9,
             retention_keep_last=25,
             proxy_enabled=True,
-            proxy_url="socks5://127.0.0.1:1080",
+            proxy_url=("socks5://127.0.0.1:1080"),
         )
     )
 
     assert updated.backup_enabled is False
+
     assert updated.compression_level == 9
+
     assert updated.retention_keep_last == 25
 
     assert updated.proxy_enabled is True
 
     assert updated.proxy_url == "socks5://127.0.0.1:1080"
+
+
+def test_update_backup_directory(
+    session_manager: SessionManager,
+) -> None:
+    repository = AppSettingsRepository(
+        session_manager,
+    )
+
+    updated = repository.update(
+        AppSettingsUpdateSchema(
+            backup_directory=Path("custom/backups"),
+        )
+    )
+
+    assert updated.backup_directory == Path("custom/backups")
 
 
 def test_partial_update_preserves_other_values(
@@ -98,3 +122,5 @@ def test_partial_update_preserves_other_values(
     assert updated.retention_keep_last == original.retention_keep_last
 
     assert updated.backup_enabled == original.backup_enabled
+
+    assert updated.backup_directory == original.backup_directory

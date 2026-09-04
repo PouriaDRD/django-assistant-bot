@@ -24,7 +24,7 @@ class AppSettingsSchema(BaseModel):
 
     backup_enabled: bool = True
 
-    backup_directory: Path = Path("./backups")
+    backup_directory: Path = Path("data/backups")
 
     compression_format: CompressionFormat = CompressionFormat.ZIP
 
@@ -51,6 +51,10 @@ class AppSettingsSchema(BaseModel):
         cls,
         value: Path,
     ) -> Path:
+        """
+        Normalize configured backup directory.
+        """
+
         return value.expanduser()
 
     @field_validator("proxy_url")
@@ -59,6 +63,10 @@ class AppSettingsSchema(BaseModel):
         cls,
         value: str,
     ) -> str:
+        """
+        Normalize proxy URL.
+        """
+
         return value.strip()
 
 
@@ -92,3 +100,9 @@ class AppSettingsUpdateSchema(BaseModel):
     proxy_enabled: bool | None = None
 
     proxy_url: str | None = None
+
+
+__all__ = [
+    "AppSettingsSchema",
+    "AppSettingsUpdateSchema",
+]
