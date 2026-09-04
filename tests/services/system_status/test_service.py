@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock
-from datetime import datetime
+
 import pytest
 
 from django_assistant_bot.database.models.enums import (
@@ -99,12 +100,44 @@ def build_project(
     )
 
 
+def build_runtime(
+    *,
+    uptime_seconds: float = 3600.0,
+) -> Mock:
+    """
+    Build application runtime mock.
+    """
+
+    runtime = Mock()
+
+    runtime.get_uptime_seconds.return_value = uptime_seconds
+
+    return runtime
+
+
+def build_database_health(
+    *,
+    healthy: bool = True,
+) -> Mock:
+    """
+    Build database health mock.
+    """
+
+    database_health = Mock()
+
+    database_health.is_healthy.return_value = healthy
+
+    return database_health
+
+
 def build_service(
     *,
     settings: Mock,
     projects: Mock,
     admins: Mock,
     scheduler: Mock,
+    runtime: Mock | None = None,
+    database_health: Mock | None = None,
 ) -> SystemStatusService:
     """
     Build system status service with mocked dependencies.
@@ -115,6 +148,8 @@ def build_service(
         projects=projects,
         admins=admins,
         scheduler=scheduler,
+        runtime=(runtime or build_runtime()),
+        database_health=(database_health or build_database_health()),
     )
 
 
@@ -170,11 +205,21 @@ def test_get_status_returns_runtime_snapshot() -> None:
 
     scheduler.is_paused = False
 
+    runtime = build_runtime(
+        uptime_seconds=7200.5,
+    )
+
+    database_health = build_database_health(
+        healthy=True,
+    )
+
     service = build_service(
         settings=settings,
         projects=projects,
         admins=admins,
         scheduler=scheduler,
+        runtime=runtime,
+        database_health=database_health,
     )
 
     result = service.get_status()
@@ -186,6 +231,10 @@ def test_get_status_returns_runtime_snapshot() -> None:
     assert result.proxy_enabled is False
 
     assert result.retention_enabled is True
+
+    assert result.database_healthy is True
+
+    assert result.uptime_seconds == 7200.5
 
     assert result.scheduler_status == SchedulerRuntimeStatus.RUNNING
 
@@ -200,6 +249,10 @@ def test_get_status_returns_runtime_snapshot() -> None:
     assert result.python_version
 
     assert result.operating_system
+
+    runtime.get_uptime_seconds.assert_called_once_with()
+
+    database_health.is_healthy.assert_called_once_with()
 
 
 # =========================================================
@@ -264,6 +317,88 @@ def test_scheduler_status(
     result = service.get_status()
 
     assert result.scheduler_status == expected
+
+
+# =========================================================
+# DATABASE HEALTH
+# =========================================================
+
+
+def test_database_health_is_exposed() -> None:
+    settings = Mock()
+
+    settings.get_settings.return_value = build_settings()
+
+    projects = Mock()
+
+    projects.list_projects.return_value = []
+
+    admins = Mock()
+
+    admins.list_admins.return_value = []
+
+    scheduler = Mock()
+
+    scheduler.is_started = True
+
+    scheduler.is_paused = False
+
+    database_health = build_database_health(
+        healthy=False,
+    )
+
+    service = build_service(
+        settings=settings,
+        projects=projects,
+        admins=admins,
+        scheduler=scheduler,
+        database_health=database_health,
+    )
+
+    result = service.get_status()
+
+    assert result.database_healthy is False
+
+
+# =========================================================
+# UPTIME
+# =========================================================
+
+
+def test_uptime_is_exposed() -> None:
+    settings = Mock()
+
+    settings.get_settings.return_value = build_settings()
+
+    projects = Mock()
+
+    projects.list_projects.return_value = []
+
+    admins = Mock()
+
+    admins.list_admins.return_value = []
+
+    scheduler = Mock()
+
+    scheduler.is_started = True
+
+    scheduler.is_paused = False
+
+    runtime = build_runtime(
+        uptime_seconds=123.5,
+    )
+
+    service = build_service(
+        settings=settings,
+        projects=projects,
+        admins=admins,
+        scheduler=scheduler,
+        runtime=runtime,
+    )
+
+    result = service.get_status()
+
+    assert result.uptime_seconds == 123.5
 
 
 # =========================================================

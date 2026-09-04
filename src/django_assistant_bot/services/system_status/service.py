@@ -72,6 +72,28 @@ class SchedulerReader(Protocol):
     ) -> bool: ...
 
 
+class RuntimeReader(Protocol):
+    """
+    Minimal application-runtime contract required by
+    system status.
+    """
+
+    def get_uptime_seconds(
+        self,
+    ) -> float: ...
+
+
+class DatabaseHealthReader(Protocol):
+    """
+    Minimal database-health contract required by
+    system status.
+    """
+
+    def is_healthy(
+        self,
+    ) -> bool: ...
+
+
 # =========================================================
 # SERVICE
 # =========================================================
@@ -94,6 +116,8 @@ class SystemStatusService:
         projects: ProjectReader,
         admins: AdminReader,
         scheduler: SchedulerReader,
+        runtime: RuntimeReader,
+        database_health: DatabaseHealthReader,
     ) -> None:
         self._settings = settings
 
@@ -102,6 +126,10 @@ class SystemStatusService:
         self._admins = admins
 
         self._scheduler = scheduler
+
+        self._runtime = runtime
+
+        self._database_health = database_health
 
     def get_status(
         self,
@@ -145,7 +173,9 @@ class SystemStatusService:
             backup_enabled=(settings.backup_enabled),
             proxy_enabled=(settings.proxy_enabled),
             retention_enabled=(settings.retention_enabled),
+            database_healthy=(self._database_health.is_healthy()),
             scheduler_status=(self._get_scheduler_status()),
+            uptime_seconds=(self._runtime.get_uptime_seconds()),
             # ---------------------------------------------
             # PROJECTS
             # ---------------------------------------------
@@ -219,8 +249,7 @@ class SystemStatusService:
     @staticmethod
     def _get_disk_root() -> str:
         """
-        Return the filesystem root containing the running
-        application.
+        Return filesystem root containing the application.
 
         This keeps disk statistics relevant to the volume
         where the application is actually running.
@@ -229,3 +258,8 @@ class SystemStatusService:
         path = Path.cwd().resolve()
 
         return path.anchor or "/"
+
+
+__all__ = [
+    "SystemStatusService",
+]

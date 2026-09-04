@@ -54,7 +54,9 @@ def build_status() -> SystemStatusSchema:
         backup_enabled=True,
         proxy_enabled=False,
         retention_enabled=True,
+        database_healthy=True,
         scheduler_status=(SchedulerRuntimeStatus.RUNNING),
+        uptime_seconds=(2 * 60 * 60 + 18 * 60),
         # -------------------------------------------------
         # PROJECTS
         # -------------------------------------------------
@@ -188,9 +190,23 @@ async def test_system_status_callback_displays_status() -> None:
 
     assert "زمان‌بندی" in text
 
+    assert "دیتابیس" in text
+
+    assert "در دسترس نیست" not in text
+
     assert "پروکسی" in text
 
     assert "نگهداری بکاپ" in text
+
+    # -----------------------------------------------------
+    # UPTIME
+    # -----------------------------------------------------
+
+    assert "زمان اجرا" in text
+
+    assert "2 ساعت" in text
+
+    assert "18 دقیقه" in text
 
     # -----------------------------------------------------
     # RESOURCES

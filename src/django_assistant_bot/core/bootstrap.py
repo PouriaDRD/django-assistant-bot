@@ -30,8 +30,14 @@ from django_assistant_bot.services.backup import (
     BackupCoordinator,
     BackupHistoryService,
 )
+from django_assistant_bot.services.database_health import (
+    DatabaseHealthService,
+)
 from django_assistant_bot.services.project import (
     ProjectService,
+)
+from django_assistant_bot.services.runtime import (
+    ApplicationRuntimeService,
 )
 from django_assistant_bot.services.scheduler import (
     BackupSchedulerService,
@@ -139,6 +145,12 @@ def bootstrap_application() -> ApplicationBootstrap:
         backup_history_repository,
     )
 
+    runtime_service = ApplicationRuntimeService()
+
+    database_health_service = DatabaseHealthService(
+        sessions,
+    )
+
     # -----------------------------------------------------
     # BACKUP ORCHESTRATION
     # -----------------------------------------------------
@@ -167,6 +179,8 @@ def bootstrap_application() -> ApplicationBootstrap:
         projects=project_service,
         admins=admin_service,
         scheduler=backup_scheduler,
+        runtime=runtime_service,
+        database_health=(database_health_service),
     )
 
     # -----------------------------------------------------

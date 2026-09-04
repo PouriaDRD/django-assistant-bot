@@ -43,7 +43,13 @@ class SystemStatusSchema(BaseModel):
 
     retention_enabled: bool
 
+    database_healthy: bool
+
     scheduler_status: SchedulerRuntimeStatus
+
+    uptime_seconds: float = Field(
+        ge=0,
+    )
 
     # =====================================================
     # PROJECTS

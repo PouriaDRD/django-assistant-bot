@@ -11,6 +11,7 @@ from django_assistant_bot.schemas.system_status import (
 
 
 LTR_ISOLATE = "\u2066"
+
 POP_DIRECTIONAL_ISOLATE = "\u2069"
 
 
@@ -19,9 +20,6 @@ def _ltr(
 ) -> str:
     """
     Isolate left-to-right content inside Persian text.
-
-    This prevents English values, numbers and units from
-    breaking Telegram's right-to-left text layout.
     """
 
     return f"{LTR_ISOLATE}" f"{value}" f"{POP_DIRECTIONAL_ISOLATE}"
@@ -84,6 +82,16 @@ def _scheduler_text(
     return "متوقف"
 
 
+def _database_text(
+    healthy: bool,
+) -> str:
+    """
+    Return Persian database health label.
+    """
+
+    return "در دسترس" if healthy else "در دسترس نیست"
+
+
 def _overall_status(
     status: SystemStatusSchema,
 ) -> tuple[str, str]:
@@ -95,6 +103,12 @@ def _overall_status(
         return (
             "🔴",
             "ربات غیرفعال است",
+        )
+
+    if not status.database_healthy:
+        return (
+            "🔴",
+            "دیتابیس در دسترس نیست",
         )
 
     if status.scheduler_status == SchedulerRuntimeStatus.STOPPED:
@@ -176,6 +190,50 @@ def _physical_cores(
     return str(value)
 
 
+def _format_uptime(
+    seconds: float,
+) -> str:
+    """
+    Format uptime as a compact Persian duration.
+    """
+
+    total_seconds = max(
+        0,
+        int(seconds),
+    )
+
+    days, remainder = divmod(
+        total_seconds,
+        86_400,
+    )
+
+    hours, remainder = divmod(
+        remainder,
+        3_600,
+    )
+
+    minutes, seconds = divmod(
+        remainder,
+        60,
+    )
+
+    parts: list[str] = []
+
+    if days:
+        parts.append(f"{days} روز")
+
+    if hours:
+        parts.append(f"{hours} ساعت")
+
+    if minutes:
+        parts.append(f"{minutes} دقیقه")
+
+    if not parts:
+        parts.append(f"{seconds} ثانیه")
+
+    return " و ".join(parts[:2])
+
+
 # =========================================================
 # OPERATING SYSTEM
 # =========================================================
@@ -238,19 +296,48 @@ def _format_services(
     Format application services section.
     """
 
+    scheduler_suffix = ""
+
+    if status.scheduler_status == SchedulerRuntimeStatus.PAUSED:
+        scheduler_suffix = " — در حالت مکث"
+
+    elif status.scheduler_status == SchedulerRuntimeStatus.STOPPED:
+        scheduler_suffix = " — متوقف"
+
+    database_suffix = "" if status.database_healthy else " — در دسترس نیست"
+
+    bot_suffix = "" if status.bot_enabled else " — غیرفعال"
+
+    backup_suffix = "" if status.backup_enabled else " — غیرفعال"
+
+    retention_suffix = "" if status.retention_enabled else " — غیرفعال"
+
     return (
         "⚙️ <b>سرویس‌ها</b>\n"
         "\n"
-        f"{_status_icon(status.bot_enabled)} ربات\n"
-        f"{_status_icon(status.backup_enabled)} سیستم بکاپ\n"
+        f"{_status_icon(status.bot_enabled)} "
+        f"ربات{bot_suffix}\n"
+        f"{_status_icon(status.backup_enabled)} "
+        f"سیستم بکاپ{backup_suffix}\n"
         f"{_scheduler_icon(status.scheduler_status)} "
-        f"زمان‌بندی — {_scheduler_text(status.scheduler_status)}\n"
+        f"زمان‌بندی{scheduler_suffix}\n"
+        f"{_status_icon(status.database_healthy)} "
+        f"دیتابیس{database_suffix}\n"
         f"{_status_icon(status.proxy_enabled)} "
-        f"پروکسی"
-        f"{'' if status.proxy_enabled else ' — غیرفعال'}\n"
+        "پروکسی\n"
         f"{_status_icon(status.retention_enabled)} "
-        "نگهداری بکاپ"
+        f"نگهداری بکاپ{retention_suffix}"
     )
+
+
+def _format_runtime(
+    status: SystemStatusSchema,
+) -> str:
+    """
+    Format application runtime information.
+    """
+
+    return "⏱ <b>زمان اجرا</b>\n" "\n" f"{_format_uptime(status.uptime_seconds)}"
 
 
 def _format_memory(
@@ -354,10 +441,6 @@ def format_system_status(
 ) -> str:
     """
     Format application status as a clean Telegram dashboard.
-
-    The layout intentionally avoids table-like spacing and
-    mixed RTL/LTR content on the same visual line wherever
-    possible.
     """
 
     overall_icon, overall_text = _overall_status(status)
@@ -369,6 +452,9 @@ def format_system_status(
         "\n"
         "\n"
         f"{_format_services(status)}\n"
+        "\n"
+        "\n"
+        f"{_format_runtime(status)}\n"
         "\n"
         "\n"
         "📊 <b>منابع سیستم</b>\n"
