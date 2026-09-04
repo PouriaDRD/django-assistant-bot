@@ -8,6 +8,7 @@ from typing import (
 )
 from unittest.mock import (
     AsyncMock,
+    Mock,
     patch,
 )
 
@@ -40,7 +41,7 @@ def test_cli_runs_application_without_arguments() -> None:
 
 
 # =========================================================
-# PROXY COMMAND
+# PROXY
 # =========================================================
 
 
@@ -114,6 +115,75 @@ def test_cli_dispatches_proxy_set_without_url() -> None:
         "set",
         proxy_url=None,
     )
+
+
+# =========================================================
+# BENCHMARK
+# =========================================================
+
+
+def test_cli_dispatches_backup_benchmark() -> None:
+    benchmark = Mock(
+        return_value=0,
+    )
+
+    with patch.object(
+        cli,
+        "run_benchmark_command",
+        benchmark,
+    ):
+        cli.main(
+            [
+                "benchmark",
+                "backup",
+                "project-1",
+            ],
+        )
+
+    benchmark.assert_called_once_with(
+        "backup",
+        project_id="project-1",
+        runs=5,
+    )
+
+
+def test_cli_dispatches_compression_benchmark() -> None:
+    benchmark = Mock(
+        return_value=0,
+    )
+
+    with patch.object(
+        cli,
+        "run_benchmark_command",
+        benchmark,
+    ):
+        cli.main(
+            [
+                "benchmark",
+                "compression",
+                "project-1",
+                "--runs",
+                "7",
+            ],
+        )
+
+    benchmark.assert_called_once_with(
+        "compression",
+        project_id="project-1",
+        runs=7,
+    )
+
+
+def test_backup_benchmark_requires_project_id() -> None:
+    with pytest.raises(
+        SystemExit,
+    ):
+        cli.main(
+            [
+                "benchmark",
+                "backup",
+            ],
+        )
 
 
 # =========================================================
