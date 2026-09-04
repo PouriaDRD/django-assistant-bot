@@ -408,3 +408,108 @@ def test_list_all_backup_history_supports_pagination(
     assert len(second_page) == 1
 
     assert first_page[0].started_at >= first_page[1].started_at
+
+
+# =========================================================
+# SUCCESSFUL HISTORY
+# =========================================================
+
+
+def test_list_successful_backup_history_for_project(
+    session_manager: SessionManager,
+) -> None:
+    project_id = create_project(
+        session_manager,
+    )
+
+    repository = BackupHistoryRepository(
+        session_manager,
+    )
+
+    now = datetime.now(
+        timezone.utc,
+    )
+
+    successful = repository.create(
+        BackupHistoryCreateSchema(
+            project_id=project_id,
+            status=BackupStatus.SUCCESS,
+            started_at=now,
+            finished_at=now,
+        )
+    )
+
+    repository.create(
+        BackupHistoryCreateSchema(
+            project_id=project_id,
+            status=BackupStatus.FAILED,
+            error_message="failure",
+            started_at=(
+                now
+                - timedelta(
+                    minutes=1,
+                )
+            ),
+            finished_at=now,
+        )
+    )
+
+    histories = repository.list_successful_for_project(project_id)
+
+    assert len(histories) == 1
+
+    assert histories[0].id == successful.id
+
+    assert histories[0].status is BackupStatus.SUCCESS
+
+
+# =========================================================
+# DELETE
+# =========================================================
+
+
+def test_delete_backup_history_by_id(
+    session_manager: SessionManager,
+) -> None:
+    project_id = create_project(
+        session_manager,
+    )
+
+    repository = BackupHistoryRepository(
+        session_manager,
+    )
+
+    now = datetime.now(
+        timezone.utc,
+    )
+
+    history = repository.create(
+        BackupHistoryCreateSchema(
+            project_id=project_id,
+            status=BackupStatus.SUCCESS,
+            started_at=now,
+            finished_at=now,
+        )
+    )
+
+    deleted = repository.delete_by_id(
+        history.id,
+    )
+
+    assert deleted is True
+
+    assert repository.get_by_id(history.id) is None
+
+
+def test_delete_unknown_backup_history_returns_false(
+    session_manager: SessionManager,
+) -> None:
+    repository = BackupHistoryRepository(
+        session_manager,
+    )
+
+    deleted = repository.delete_by_id(
+        "unknown-history",
+    )
+
+    assert deleted is False

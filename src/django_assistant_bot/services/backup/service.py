@@ -1,29 +1,43 @@
 from __future__ import annotations
 
 import tempfile
-from datetime import datetime, timezone
+from datetime import (
+    datetime,
+    timezone,
+)
 from pathlib import Path
 
 from django_assistant_bot.database.models.enums import (
     BackupStatus,
     DatabaseType,
 )
-from django_assistant_bot.schemas.project import ProjectSchema
-from django_assistant_bot.services.backup.archive import ArchiveService
-from django_assistant_bot.services.backup.checksum import ChecksumService
-from django_assistant_bot.services.backup.database import SQLiteBackup
-from django_assistant_bot.services.backup.media import MediaCollector
-from django_assistant_bot.services.backup.models import BackupResult
-from django_assistant_bot.services.backup.retention import RetentionService
+from django_assistant_bot.schemas.project import (
+    ProjectSchema,
+)
+from django_assistant_bot.services.backup.archive import (
+    ArchiveService,
+)
+from django_assistant_bot.services.backup.checksum import (
+    ChecksumService,
+)
+from django_assistant_bot.services.backup.database import (
+    SQLiteBackup,
+)
 from django_assistant_bot.services.backup.exceptions import (
     BackupError,
     ProjectBackupDisabledError,
+)
+from django_assistant_bot.services.backup.media import (
+    MediaCollector,
+)
+from django_assistant_bot.services.backup.models import (
+    BackupResult,
 )
 
 
 class BackupService:
     """
-    High-level backup orchestrator.
+    High-level backup executor.
 
     Responsibilities:
     - validate project backup requirements
@@ -31,13 +45,19 @@ class BackupService:
     - collect optional media files
     - create the final archive
     - calculate archive checksum
-    - apply retention policy
+
+    Retention intentionally does not belong here.
+
+    Retention is an application-level concern because it
+    must coordinate both filesystem archives and persisted
+    backup history.
 
     This service is intentionally independent from:
     - Telegram
     - scheduler
     - SQLAlchemy
     - configuration persistence
+    - retention persistence
     - UI layers
     """
 
@@ -45,14 +65,9 @@ class BackupService:
         self,
         backup_directory: Path,
         compression_level: int = 6,
-        retention_enabled: bool = True,
-        keep_last: int = 10,
     ) -> None:
         if not 0 <= compression_level <= 9:
-            raise ValueError("Compression level must be between 0 and 9.")
-
-        if keep_last < 1:
-            raise ValueError("keep_last must be greater than or equal to 1.")
+            raise ValueError(("Compression level must be " "between 0 and 9."))
 
         self._backup_directory = backup_directory.expanduser()
 
@@ -61,16 +76,10 @@ class BackupService:
         self._media_collector = MediaCollector()
 
         self._archive_service = ArchiveService(
-            compression_level=compression_level,
+            compression_level=(compression_level),
         )
 
         self._checksum_service = ChecksumService()
-
-        self._retention_service = RetentionService()
-
-        self._retention_enabled = retention_enabled
-
-        self._keep_last = keep_last
 
     def backup_project(
         self,
@@ -104,7 +113,7 @@ class BackupService:
             "%Y%m%d_%H%M%S",
         )
 
-        archive_path = project_directory / f"{project.id}_{timestamp}.zip"
+        archive_path = project_directory / (f"{project.id}_" f"{timestamp}.zip")
 
         try:
             with tempfile.TemporaryDirectory(
@@ -137,12 +146,6 @@ class BackupService:
             checksum_result = self._checksum_service.calculate(
                 archive_result.archive_path,
             )
-
-            if self._retention_enabled:
-                self._retention_service.cleanup(
-                    project_directory=(project_directory),
-                    keep_last=self._keep_last,
-                )
 
             finished_at = datetime.now(
                 timezone.utc,
@@ -189,18 +192,20 @@ class BackupService:
         """
 
         if not project.enabled:
-            raise ProjectBackupDisabledError("Project is disabled: " f"{project.name}")
+            raise ProjectBackupDisabledError(
+                ("Project is disabled: " f"{project.name}")
+            )
 
         if project.database.type is not DatabaseType.SQLITE:
-            raise BackupError("Only SQLite databases are " "currently supported.")
+            raise BackupError(("Only SQLite databases are " "currently supported."))
 
         database_path = project.database.path
 
         if not database_path.exists():
-            raise BackupError("Database does not exist: " f"{database_path}")
+            raise BackupError(("Database does not exist: " f"{database_path}"))
 
         if not database_path.is_file():
-            raise BackupError("Database path is not a file: " f"{database_path}")
+            raise BackupError(("Database path is not a file: " f"{database_path}"))
 
         if not project.media.enabled:
             return
@@ -208,10 +213,10 @@ class BackupService:
         media_path = project.media.path
 
         if not media_path.exists():
-            raise BackupError("Media directory does not exist: " f"{media_path}")
+            raise BackupError(("Media directory does not exist: " f"{media_path}"))
 
         if not media_path.is_dir():
-            raise BackupError("Media path is not a directory: " f"{media_path}")
+            raise BackupError(("Media path is not a directory: " f"{media_path}"))
 
     @staticmethod
     def _remove_partial_archive(

@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from sqlalchemy import (
     Engine,
 )
-
 from django_assistant_bot.bot.context import (
     ApplicationContext,
 )
@@ -31,6 +30,9 @@ from django_assistant_bot.services.admin import (
 from django_assistant_bot.services.backup import (
     BackupCoordinator,
     BackupHistoryService,
+)
+from django_assistant_bot.services.backup.retention import (
+    RetentionService,
 )
 from django_assistant_bot.services.database_health import (
     DatabaseHealthService,
@@ -151,14 +153,19 @@ def bootstrap_application() -> ApplicationBootstrap:
         sessions,
     )
 
+    retention_service = RetentionService(
+        backup_history_repository,
+    )
+
     # -----------------------------------------------------
     # BACKUP ORCHESTRATION
     # -----------------------------------------------------
 
     backup_coordinator = BackupCoordinator(
-        projects=(project_service),
-        settings=(settings_service),
-        history=(backup_history_repository),
+        projects=project_service,
+        settings=settings_service,
+        history=backup_history_repository,
+        retention=retention_service,
     )
 
     # -----------------------------------------------------

@@ -43,6 +43,9 @@ from django_assistant_bot.services.backup.models import (
     BackupResult,
     ChecksumResult,
 )
+from django_assistant_bot.services.backup.retention import (
+    RetentionResult,
+)
 
 # =========================================================
 # TEST DOUBLES
@@ -165,7 +168,7 @@ class BlockingBackupRunner:
         if not self.release.wait(
             timeout=5,
         ):
-            raise RuntimeError("Timed out waiting " "for test release.")
+            raise RuntimeError(("Timed out waiting " "for test release."))
 
         return self.result
 
@@ -188,6 +191,43 @@ class FakeRunnerFactory:
         )
 
         return self.runner
+
+
+class FakeRetentionRunner:
+    def __init__(
+        self,
+        *,
+        error: Exception | None = None,
+        result: RetentionResult | None = None,
+    ) -> None:
+        self.error = error
+
+        self.result = result if result is not None else RetentionResult()
+
+        self.calls: list[
+            tuple[
+                str,
+                int,
+            ]
+        ] = []
+
+    def cleanup(
+        self,
+        *,
+        project_id: str,
+        keep_last: int,
+    ) -> RetentionResult:
+        self.calls.append(
+            (
+                project_id,
+                keep_last,
+            )
+        )
+
+        if self.error is not None:
+            raise self.error
+
+        return self.result
 
 
 # =========================================================
@@ -225,14 +265,16 @@ def build_settings(
     *,
     bot_enabled: bool = True,
     backup_enabled: bool = True,
+    retention_enabled: bool = True,
+    retention_keep_last: int = 5,
 ) -> AppSettingsSchema:
     return AppSettingsSchema(
         bot_enabled=bot_enabled,
         backup_enabled=backup_enabled,
         backup_directory=(tmp_path / "backups"),
         compression_level=7,
-        retention_enabled=True,
-        retention_keep_last=5,
+        retention_enabled=(retention_enabled),
+        retention_keep_last=(retention_keep_last),
     )
 
 
@@ -273,10 +315,12 @@ def build_coordinator(
     settings: AppSettingsSchema,
     runner: FakeBackupRunner | BlockingBackupRunner,
     history: FakeHistoryWriter | None = None,
+    retention: FakeRetentionRunner | None = None,
 ) -> tuple[
     BackupCoordinator,
     FakeHistoryWriter,
     FakeRunnerFactory,
+    FakeRetentionRunner,
 ]:
     project_reader = FakeProjectReader(
         project,
@@ -288,6 +332,8 @@ def build_coordinator(
 
     history_writer = history if history is not None else FakeHistoryWriter()
 
+    retention_runner = retention if retention is not None else FakeRetentionRunner()
+
     factory = FakeRunnerFactory(
         runner,
     )
@@ -296,6 +342,7 @@ def build_coordinator(
         projects=project_reader,
         settings=settings_reader,
         history=history_writer,
+        retention=retention_runner,
         runner_factory=factory,
     )
 
@@ -303,6 +350,7 @@ def build_coordinator(
         coordinator,
         history_writer,
         factory,
+        retention_runner,
     )
 
 
@@ -334,6 +382,7 @@ def test_successful_backup_records_history(
         coordinator,
         history,
         factory,
+        retention,
     ) = build_coordinator(
         project=project,
         settings=settings,
@@ -378,6 +427,13 @@ def test_successful_backup_records_history(
 
     assert record.error_message is None
 
+    assert retention.calls == [
+        (
+            project.id,
+            settings.retention_keep_last,
+        )
+    ]
+
 
 # =========================================================
 # GLOBAL BOT DISABLE
@@ -406,6 +462,7 @@ def test_bot_disabled_prevents_execution(
         coordinator,
         history,
         factory,
+        retention,
     ) = build_coordinator(
         project=project,
         settings=settings,
@@ -425,6 +482,8 @@ def test_bot_disabled_prevents_execution(
     assert factory.settings == []
 
     assert history.records == []
+
+    assert retention.calls == []
 
     assert not coordinator.is_running(
         project.id,
@@ -458,6 +517,7 @@ def test_backup_disabled_prevents_execution(
         coordinator,
         history,
         factory,
+        retention,
     ) = build_coordinator(
         project=project,
         settings=settings,
@@ -477,6 +537,8 @@ def test_backup_disabled_prevents_execution(
     assert factory.settings == []
 
     assert history.records == []
+
+    assert retention.calls == []
 
     assert not coordinator.is_running(
         project.id,
@@ -507,6 +569,7 @@ def test_failed_backup_records_failed_history(
         coordinator,
         history,
         _,
+        retention,
     ) = build_coordinator(
         project=project,
         settings=settings,
@@ -543,6 +606,8 @@ def test_failed_backup_records_failed_history(
 
     assert record.finished_at is not None
 
+    assert retention.calls == []
+
 
 # =========================================================
 # LOCK RELEASE
@@ -568,6 +633,7 @@ def test_lock_is_released_after_failure(
         coordinator,
         _,
         _,
+        retention,
     ) = build_coordinator(
         project=project,
         settings=settings,
@@ -585,6 +651,8 @@ def test_lock_is_released_after_failure(
         project.id,
     )
 
+    assert retention.calls == []
+
     runner.error = None
 
     runner.result = build_result(
@@ -596,6 +664,13 @@ def test_lock_is_released_after_failure(
     )
 
     assert result.status is BackupStatus.SUCCESS
+
+    assert retention.calls == [
+        (
+            project.id,
+            settings.retention_keep_last,
+        )
+    ]
 
 
 # =========================================================
@@ -624,6 +699,7 @@ def test_same_project_cannot_run_concurrently(
         coordinator,
         history,
         _,
+        retention,
     ) = build_coordinator(
         project=project,
         settings=settings,
@@ -677,6 +753,13 @@ def test_same_project_cannot_run_concurrently(
 
     assert len(history.records) == 1
 
+    assert retention.calls == [
+        (
+            project.id,
+            settings.retention_keep_last,
+        )
+    ]
+
     assert not coordinator.is_running(
         project.id,
     )
@@ -708,8 +791,11 @@ def test_successful_backup_with_history_failure_raises_error(
         fail=True,
     )
 
+    retention = FakeRetentionRunner()
+
     (
         coordinator,
+        _,
         _,
         _,
     ) = build_coordinator(
@@ -717,6 +803,7 @@ def test_successful_backup_with_history_failure_raises_error(
         settings=settings,
         runner=runner,
         history=history,
+        retention=retention,
     )
 
     with pytest.raises(
@@ -726,6 +813,8 @@ def test_successful_backup_with_history_failure_raises_error(
         coordinator.run(
             project.id,
         )
+
+    assert retention.calls == []
 
     assert not coordinator.is_running(
         project.id,
@@ -754,6 +843,7 @@ def test_empty_project_id_is_rejected(
         coordinator,
         history,
         _,
+        retention,
     ) = build_coordinator(
         project=project,
         settings=build_settings(
@@ -773,6 +863,8 @@ def test_empty_project_id_is_rejected(
     assert runner.projects == []
 
     assert history.records == []
+
+    assert retention.calls == []
 
 
 def test_disabled_project_is_rejected_explicitly(
@@ -798,6 +890,7 @@ def test_disabled_project_is_rejected_explicitly(
         coordinator,
         history,
         factory,
+        retention,
     ) = build_coordinator(
         project=project,
         settings=build_settings(
@@ -819,6 +912,230 @@ def test_disabled_project_is_rejected_explicitly(
     assert factory.settings == []
 
     assert history.records == []
+
+    assert retention.calls == []
+
+    assert not coordinator.is_running(
+        project.id,
+    )
+
+
+# =========================================================
+# RETENTION
+# =========================================================
+
+
+def test_successful_backup_runs_retention(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    settings = build_settings(
+        tmp_path,
+        retention_enabled=True,
+        retention_keep_last=7,
+    )
+
+    backup_result = build_result(
+        tmp_path,
+    )
+
+    runner = FakeBackupRunner(
+        result=backup_result,
+    )
+
+    retention = FakeRetentionRunner()
+
+    (
+        coordinator,
+        history,
+        _,
+        returned_retention,
+    ) = build_coordinator(
+        project=project,
+        settings=settings,
+        runner=runner,
+        retention=retention,
+    )
+
+    returned = coordinator.run(
+        project.id,
+    )
+
+    assert returned is backup_result
+
+    assert len(history.records) == 1
+
+    assert history.records[0].status is BackupStatus.SUCCESS
+
+    assert returned_retention is retention
+
+    assert retention.calls == [
+        (
+            project.id,
+            7,
+        )
+    ]
+
+
+def test_disabled_retention_is_not_executed(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    settings = build_settings(
+        tmp_path,
+        retention_enabled=False,
+    )
+
+    backup_result = build_result(
+        tmp_path,
+    )
+
+    runner = FakeBackupRunner(
+        result=backup_result,
+    )
+
+    retention = FakeRetentionRunner()
+
+    (
+        coordinator,
+        history,
+        _,
+        _,
+    ) = build_coordinator(
+        project=project,
+        settings=settings,
+        runner=runner,
+        retention=retention,
+    )
+
+    returned = coordinator.run(
+        project.id,
+    )
+
+    assert returned is backup_result
+
+    assert len(history.records) == 1
+
+    assert history.records[0].status is BackupStatus.SUCCESS
+
+    assert retention.calls == []
+
+
+def test_retention_failure_does_not_fail_successful_backup(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    settings = build_settings(
+        tmp_path,
+        retention_enabled=True,
+        retention_keep_last=5,
+    )
+
+    backup_result = build_result(
+        tmp_path,
+    )
+
+    runner = FakeBackupRunner(
+        result=backup_result,
+    )
+
+    retention = FakeRetentionRunner(
+        error=RuntimeError("retention failed"),
+    )
+
+    (
+        coordinator,
+        history,
+        _,
+        _,
+    ) = build_coordinator(
+        project=project,
+        settings=settings,
+        runner=runner,
+        retention=retention,
+    )
+
+    returned = coordinator.run(
+        project.id,
+    )
+
+    assert returned is backup_result
+
+    assert len(history.records) == 1
+
+    assert history.records[0].status is BackupStatus.SUCCESS
+
+    assert retention.calls == [
+        (
+            project.id,
+            settings.retention_keep_last,
+        )
+    ]
+
+    assert "Backup retention cleanup failed" in caplog.text
+
+    assert not coordinator.is_running(
+        project.id,
+    )
+
+
+def test_history_failure_prevents_retention(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    settings = build_settings(
+        tmp_path,
+    )
+
+    backup_result = build_result(
+        tmp_path,
+    )
+
+    runner = FakeBackupRunner(
+        result=backup_result,
+    )
+
+    history = FakeHistoryWriter(
+        fail=True,
+    )
+
+    retention = FakeRetentionRunner()
+
+    (
+        coordinator,
+        _,
+        _,
+        _,
+    ) = build_coordinator(
+        project=project,
+        settings=settings,
+        runner=runner,
+        history=history,
+        retention=retention,
+    )
+
+    with pytest.raises(
+        BackupHistoryError,
+        match="history",
+    ):
+        coordinator.run(
+            project.id,
+        )
+
+    assert retention.calls == []
 
     assert not coordinator.is_running(
         project.id,

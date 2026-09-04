@@ -12,6 +12,9 @@ from sqlalchemy.exc import (
 from django_assistant_bot.database.models.backup_history import (
     BackupHistoryModel,
 )
+from django_assistant_bot.database.models.enums import (
+    BackupStatus,
+)
 from django_assistant_bot.database.session import (
     SessionManager,
 )
@@ -239,6 +242,74 @@ class BackupHistoryRepository:
 
         except SQLAlchemyError as exc:
             raise PersistenceError("Could not load backup history.") from exc
+
+    # =====================================================
+    # RETENTION
+    # =====================================================
+
+    def list_successful_for_project(
+        self,
+        project_id: str,
+    ) -> list[BackupHistorySchema]:
+        """
+        Return successful project backup history
+        ordered newest first.
+
+        This query is used by retention cleanup.
+        """
+
+        try:
+            with self._sessions.session() as session:
+                statement = (
+                    select(BackupHistoryModel)
+                    .where(
+                        BackupHistoryModel.project_id == project_id,
+                        BackupHistoryModel.status == BackupStatus.SUCCESS,
+                    )
+                    .order_by(BackupHistoryModel.started_at.desc())
+                )
+
+                models = list(session.scalars(statement))
+
+                return [
+                    self._to_schema(
+                        model,
+                    )
+                    for model in models
+                ]
+
+        except SQLAlchemyError as exc:
+            raise PersistenceError(
+                ("Could not load successful " "backup history.")
+            ) from exc
+
+    def delete_by_id(
+        self,
+        history_id: str,
+    ) -> bool:
+        """
+        Delete one backup history record.
+
+        Returns True when a record was deleted.
+        """
+
+        try:
+            with self._sessions.transaction() as session:
+                statement = select(BackupHistoryModel).where(
+                    BackupHistoryModel.id == history_id
+                )
+
+                model = session.scalars(statement).first()
+
+                if model is None:
+                    return False
+
+                session.delete(model)
+
+                return True
+
+        except SQLAlchemyError as exc:
+            raise PersistenceError("Could not delete backup history.") from exc
 
     # =====================================================
     # MAPPING

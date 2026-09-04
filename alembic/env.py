@@ -6,9 +6,10 @@ from alembic import context
 from sqlalchemy import Connection
 from sqlalchemy.engine import Engine
 
-import django_assistant_bot.database.models
-from django_assistant_bot.core.environment import (
-    EnvironmentManager,
+import django_assistant_bot.database.models  # noqa: F401
+
+from django_assistant_bot.core.paths import (
+    DATABASE_PATH,
 )
 from django_assistant_bot.database.base import (
     Base,
@@ -17,6 +18,11 @@ from django_assistant_bot.database.engine import (
     build_database_url,
     create_database_engine,
 )
+
+# =========================================================
+# ALEMBIC CONFIG
+# =========================================================
+
 
 config = context.config
 
@@ -27,11 +33,13 @@ if config.config_file_name is not None:
     )
 
 
-environment = EnvironmentManager().load()
+# =========================================================
+# DATABASE
+# =========================================================
 
 
 database_url = build_database_url(
-    environment.database_path,
+    DATABASE_PATH,
 )
 
 
@@ -43,7 +51,17 @@ config.set_main_option(
 )
 
 
+# =========================================================
+# METADATA
+# =========================================================
+
+
 target_metadata = Base.metadata
+
+
+# =========================================================
+# OFFLINE MIGRATIONS
+# =========================================================
 
 
 def run_migrations_offline() -> None:
@@ -70,6 +88,11 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# =========================================================
+# CONNECTION CONFIGURATION
+# =========================================================
+
+
 def configure_connection(
     connection: Connection,
 ) -> None:
@@ -86,15 +109,18 @@ def configure_connection(
     )
 
 
+# =========================================================
+# ONLINE MIGRATIONS
+# =========================================================
+
+
 def run_migrations_online() -> None:
     """
-    Run migrations against the configured application
-    database.
+    Run migrations against the application's fixed
+    SQLite database.
     """
 
-    engine: Engine = create_database_engine(
-        environment,
-    )
+    engine: Engine = create_database_engine()
 
     try:
         with engine.connect() as connection:
@@ -107,6 +133,11 @@ def run_migrations_online() -> None:
 
     finally:
         engine.dispose()
+
+
+# =========================================================
+# EXECUTION
+# =========================================================
 
 
 if context.is_offline_mode():

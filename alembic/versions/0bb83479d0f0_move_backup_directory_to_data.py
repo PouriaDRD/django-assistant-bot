@@ -1,6 +1,6 @@
 """move backup directory to data
 
-Revision ID: YOUR_REVISION_ID
+Revision ID: 0bb83479d0f0
 Revises: 1fb0ea896219
 Create Date: 2026-09-04
 
@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "YOUR_REVISION_ID"
+revision: str = "0bb83479d0f0"
 
 down_revision: str | None = "1fb0ea896219"
 

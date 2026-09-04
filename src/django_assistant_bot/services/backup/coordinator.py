@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import (
     datetime,
     timezone,
@@ -31,9 +32,17 @@ from django_assistant_bot.services.backup.exceptions import (
 from django_assistant_bot.services.backup.models import (
     BackupResult,
 )
+from django_assistant_bot.services.backup.retention import (
+    RetentionResult,
+)
 from django_assistant_bot.services.backup.service import (
     BackupService,
 )
+
+logger = logging.getLogger(
+    __name__,
+)
+
 
 # =========================================================
 # DEPENDENCY CONTRACTS
@@ -96,6 +105,19 @@ class BackupRunnerFactory(Protocol):
     ) -> BackupRunner: ...
 
 
+class RetentionRunner(Protocol):
+    """
+    Minimal retention dependency required by coordinator.
+    """
+
+    def cleanup(
+        self,
+        *,
+        project_id: str,
+        keep_last: int,
+    ) -> RetentionResult: ...
+
+
 # =========================================================
 # DEFAULT FACTORY
 # =========================================================
@@ -106,13 +128,14 @@ def create_backup_service(
 ) -> BackupService:
     """
     Build BackupService from persisted runtime settings.
+
+    Retention is intentionally handled by BackupCoordinator
+    after successful backup-history persistence.
     """
 
     return BackupService(
-        backup_directory=settings.backup_directory,
-        compression_level=settings.compression_level,
-        retention_enabled=settings.retention_enabled,
-        keep_last=settings.retention_keep_last,
+        backup_directory=(settings.backup_directory),
+        compression_level=(settings.compression_level),
     )
 
 
@@ -123,17 +146,23 @@ def create_backup_service(
 
 class BackupCoordinator:
     """
-    Coordinates complete application-level backup execution.
+    Coordinate complete application-level backup execution.
 
     Responsibilities:
     - load project configuration
     - load application settings
-    - reject execution when the bot is globally disabled
+    - reject execution when bot is globally disabled
     - reject backups when globally disabled
     - prevent concurrent backups for the same project
     - execute BackupService
     - persist successful backup history
     - persist failed backup history
+    - apply retention after successful history persistence
+
+    Retention is best-effort.
+
+    A retention failure must never convert an already
+    successful backup into a failed backup.
 
     This coordinator intentionally does not know anything
     about Telegram or the scheduler.
@@ -145,6 +174,7 @@ class BackupCoordinator:
         projects: ProjectReader,
         settings: SettingsReader,
         history: BackupHistoryWriter,
+        retention: RetentionRunner,
         runner_factory: BackupRunnerFactory = create_backup_service,
     ) -> None:
         self._projects = projects
@@ -152,6 +182,8 @@ class BackupCoordinator:
         self._settings = settings
 
         self._history = history
+
+        self._retention = retention
 
         self._runner_factory = runner_factory
 
@@ -221,28 +253,25 @@ class BackupCoordinator:
         project_id: str,
     ) -> BackupResult:
         """
-        Run one backup after validating global and project
-        application state.
+        Run one backup after validating application state.
         """
 
         settings = self._settings.get_settings()
 
-        # Global bot state is the highest-level switch.
-        #
-        # When disabled, no backup activity is allowed,
-        # regardless of backup or project configuration.
         if not settings.bot_enabled:
             raise BotDisabledError("Application activity is disabled.")
 
         if not settings.backup_enabled:
-            raise BackupDisabledError("Backup functionality is disabled.")
+            raise BackupDisabledError(("Backup functionality " "is disabled."))
 
         project = self._projects.get_project(
             project_id,
         )
 
         if not project.enabled:
-            raise ProjectBackupDisabledError("Project is disabled: " f"{project.name}")
+            raise ProjectBackupDisabledError(
+                ("Project is disabled: " f"{project.name}")
+            )
 
         started_at = datetime.now(
             timezone.utc,
@@ -273,14 +302,79 @@ class BackupCoordinator:
             )
 
             raise BackupExecutionError(
-                "Backup failed for project: " f"{project.name}"
+                ("Backup failed for project: " f"{project.name}")
             ) from exc
+
+        # -------------------------------------------------
+        # Persist successful backup before retention.
+        # -------------------------------------------------
 
         self._record_success(
             result,
         )
 
+        # -------------------------------------------------
+        # Retention is best-effort.
+        # -------------------------------------------------
+
+        if settings.retention_enabled:
+            self._apply_retention(
+                project_id=project.id,
+                keep_last=(settings.retention_keep_last),
+            )
+
         return result
+
+    # =====================================================
+    # RETENTION
+    # =====================================================
+
+    def _apply_retention(
+        self,
+        *,
+        project_id: str,
+        keep_last: int,
+    ) -> None:
+        """
+        Apply retention after a successful backup.
+
+        Cleanup failure must never change the successful
+        backup result.
+
+        The exception is intentionally logged and swallowed.
+        """
+
+        try:
+            result = self._retention.cleanup(
+                project_id=project_id,
+                keep_last=keep_last,
+            )
+
+        except Exception:
+            logger.exception(
+                ("Backup retention cleanup failed " "for project %s."),
+                project_id,
+            )
+
+            return
+
+        if result.removed_history_ids:
+            logger.info(
+                (
+                    "Backup retention removed %d "
+                    "backup history record(s) "
+                    "for project %s."
+                ),
+                len(result.removed_history_ids),
+                project_id,
+            )
+
+        if result.failed_archives:
+            logger.warning(
+                ("Backup retention could not remove " "%d archive(s) for project %s."),
+                len(result.failed_archives),
+                project_id,
+            )
 
     # =====================================================
     # HISTORY
@@ -297,7 +391,7 @@ class BackupCoordinator:
         data = BackupHistoryCreateSchema(
             project_id=result.project_id,
             status=BackupStatus.SUCCESS,
-            archive_path=result.archive_path,
+            archive_path=(result.archive_path),
             database_size_bytes=(result.database_size_bytes),
             media_size_bytes=(result.media_size_bytes),
             archive_size_bytes=(result.archive_size_bytes),
@@ -316,7 +410,7 @@ class BackupCoordinator:
 
         except Exception as exc:
             raise BackupHistoryError(
-                "Backup succeeded but history " "could not be recorded."
+                ("Backup succeeded but history " "could not be recorded.")
             ) from exc
 
     def _record_failure(
@@ -358,12 +452,12 @@ class BackupCoordinator:
             )
 
         except Exception as history_error:
-            # The original backup error is more important
-            # than a secondary history persistence failure.
             error.add_note(
-                "Additionally, failed to persist "
-                "backup failure history: "
-                f"{history_error}"
+                (
+                    "Additionally, failed to persist "
+                    "backup failure history: "
+                    f"{history_error}"
+                )
             )
 
     # =====================================================
@@ -377,14 +471,14 @@ class BackupCoordinator:
         """
         Atomically mark a project as running.
 
-        We intentionally reject duplicate execution instead
-        of blocking until the previous backup finishes.
+        Duplicate execution is rejected instead of waiting
+        for the previous backup to finish.
         """
 
         with self._running_projects_lock:
             if project_id in self._running_projects:
                 raise BackupAlreadyRunningError(
-                    "A backup is already running " "for project: " f"{project_id}"
+                    ("A backup is already running " "for project: " f"{project_id}")
                 )
 
             self._running_projects.add(
@@ -403,3 +497,15 @@ class BackupCoordinator:
             self._running_projects.discard(
                 project_id,
             )
+
+
+__all__ = [
+    "BackupCoordinator",
+    "BackupHistoryWriter",
+    "BackupRunner",
+    "BackupRunnerFactory",
+    "ProjectReader",
+    "RetentionRunner",
+    "SettingsReader",
+    "create_backup_service",
+]

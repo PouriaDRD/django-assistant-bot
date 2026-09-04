@@ -16,15 +16,25 @@ from django_assistant_bot.schemas.project import (
     ProjectSchema,
     ScheduleSchema,
 )
-from django_assistant_bot.services.backup import BackupService
+from django_assistant_bot.services.backup import (
+    BackupService,
+)
 from django_assistant_bot.services.backup.exceptions import (
     BackupError,
 )
+
+# =========================================================
+# HELPERS
+# =========================================================
 
 
 def create_sqlite_database(
     path: Path,
 ) -> None:
+    """
+    Create a small valid SQLite database for backup tests.
+    """
+
     connection = sqlite3.connect(
         path,
     )
@@ -55,6 +65,10 @@ def build_project(
     enabled: bool = True,
     media_enabled: bool = True,
 ) -> ProjectSchema:
+    """
+    Build a project schema for backup tests.
+    """
+
     return ProjectSchema(
         id="test-project-id",
         name="test-project",
@@ -75,9 +89,18 @@ def build_project(
     )
 
 
+# =========================================================
+# SUCCESS
+# =========================================================
+
+
 def test_backup_project(
     tmp_path: Path,
 ) -> None:
+    """
+    A complete project backup should create a valid archive.
+    """
+
     database_path = tmp_path / "db.sqlite3"
 
     media_path = tmp_path / "media"
@@ -103,8 +126,6 @@ def test_backup_project(
     service = BackupService(
         backup_directory=backups_path,
         compression_level=6,
-        retention_enabled=True,
-        keep_last=10,
     )
 
     result = service.backup_project(
@@ -131,6 +152,10 @@ def test_backup_project(
 def test_backup_without_media(
     tmp_path: Path,
 ) -> None:
+    """
+    Backup should succeed when media backup is disabled.
+    """
+
     database_path = tmp_path / "db.sqlite3"
 
     create_sqlite_database(
@@ -154,12 +179,24 @@ def test_backup_without_media(
     assert result.status is BackupStatus.SUCCESS
 
     assert result.media_size_bytes == 0
+
     assert result.media_file_count == 0
+
+    assert result.archive_path.exists()
+
+
+# =========================================================
+# PROJECT VALIDATION
+# =========================================================
 
 
 def test_disabled_project_cannot_be_backed_up(
     tmp_path: Path,
 ) -> None:
+    """
+    Disabled projects must not be backed up.
+    """
+
     database_path = tmp_path / "db.sqlite3"
 
     media_path = tmp_path / "media"
@@ -192,6 +229,10 @@ def test_disabled_project_cannot_be_backed_up(
 def test_missing_database_fails(
     tmp_path: Path,
 ) -> None:
+    """
+    Missing SQLite database must fail before backup starts.
+    """
+
     media_path = tmp_path / "media"
 
     media_path.mkdir()
@@ -214,9 +255,46 @@ def test_missing_database_fails(
         )
 
 
+def test_database_path_must_be_file(
+    tmp_path: Path,
+) -> None:
+    """
+    Database path must point to a file.
+    """
+
+    database_path = tmp_path / "database-directory"
+
+    database_path.mkdir()
+
+    media_path = tmp_path / "media"
+
+    media_path.mkdir()
+
+    project = build_project(
+        database_path=database_path,
+        media_path=media_path,
+    )
+
+    service = BackupService(
+        backup_directory=(tmp_path / "backups"),
+    )
+
+    with pytest.raises(
+        BackupError,
+        match="Database path is not a file",
+    ):
+        service.backup_project(
+            project,
+        )
+
+
 def test_missing_media_directory_fails(
     tmp_path: Path,
 ) -> None:
+    """
+    Enabled media backup requires an existing directory.
+    """
+
     database_path = tmp_path / "db.sqlite3"
 
     create_sqlite_database(
@@ -241,25 +319,69 @@ def test_missing_media_directory_fails(
         )
 
 
-def test_invalid_compression_level_fails(
+def test_media_path_must_be_directory(
     tmp_path: Path,
 ) -> None:
+    """
+    Enabled media path must point to a directory.
+    """
+
+    database_path = tmp_path / "db.sqlite3"
+
+    create_sqlite_database(
+        database_path,
+    )
+
+    media_path = tmp_path / "media.txt"
+
+    media_path.write_text(
+        "not a directory",
+        encoding="utf-8",
+    )
+
+    project = build_project(
+        database_path=database_path,
+        media_path=media_path,
+    )
+
+    service = BackupService(
+        backup_directory=(tmp_path / "backups"),
+    )
+
     with pytest.raises(
-        ValueError,
+        BackupError,
+        match="Media path is not a directory",
     ):
-        BackupService(
-            backup_directory=tmp_path,
-            compression_level=10,
+        service.backup_project(
+            project,
         )
 
 
-def test_invalid_keep_last_fails(
+# =========================================================
+# CONFIGURATION VALIDATION
+# =========================================================
+
+
+@pytest.mark.parametrize(
+    "compression_level",
+    [
+        -1,
+        10,
+    ],
+)
+def test_invalid_compression_level_fails(
     tmp_path: Path,
+    compression_level: int,
 ) -> None:
+    """
+    Compression level must remain inside ZIP range 0..9.
+    """
+
     with pytest.raises(
         ValueError,
+        match="Compression level",
     ):
         BackupService(
             backup_directory=tmp_path,
-            keep_last=0,
+            compression_level=(compression_level),
         )
