@@ -118,6 +118,72 @@ def test_update_backup_settings(
 
 
 # =========================================================
+# COMPRESSION SETTINGS
+# =========================================================
+
+
+def test_set_compression_level(
+    service: AppSettingsService,
+) -> None:
+    updated = service.set_compression_level(
+        8,
+    )
+
+    assert updated.compression_level == 8
+
+    persisted = service.get_settings()
+
+    assert persisted.compression_level == 8
+
+
+def test_set_minimum_compression_level(
+    service: AppSettingsService,
+) -> None:
+    updated = service.set_compression_level(
+        0,
+    )
+
+    assert updated.compression_level == 0
+
+    persisted = service.get_settings()
+
+    assert persisted.compression_level == 0
+
+
+def test_set_maximum_compression_level(
+    service: AppSettingsService,
+) -> None:
+    updated = service.set_compression_level(
+        9,
+    )
+
+    assert updated.compression_level == 9
+
+    persisted = service.get_settings()
+
+    assert persisted.compression_level == 9
+
+
+def test_compression_helper_preserves_other_settings(
+    service: AppSettingsService,
+) -> None:
+    service.disable_bot()
+    service.disable_backups()
+    service.set_retention_keep_last(
+        25,
+    )
+
+    updated = service.set_compression_level(
+        3,
+    )
+
+    assert updated.compression_level == 3
+    assert updated.bot_enabled is False
+    assert updated.backup_enabled is False
+    assert updated.retention_keep_last == 25
+
+
+# =========================================================
 # PROXY SETTINGS
 # =========================================================
 
@@ -167,12 +233,21 @@ def test_partial_update_keeps_existing_values(
 # =========================================================
 
 
-def test_invalid_compression_level_fails() -> None:
+def test_invalid_compression_level_above_max_fails() -> None:
     with pytest.raises(
         ValidationError,
     ):
         AppSettingsUpdateSchema(
-            compression_level=15,
+            compression_level=10,
+        )
+
+
+def test_invalid_compression_level_below_min_fails() -> None:
+    with pytest.raises(
+        ValidationError,
+    ):
+        AppSettingsUpdateSchema(
+            compression_level=-1,
         )
 
 

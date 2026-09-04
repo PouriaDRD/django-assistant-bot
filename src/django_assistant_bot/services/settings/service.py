@@ -140,6 +140,27 @@ class AppSettingsService:
         )
 
     # =====================================================
+    # COMPRESSION
+    # =====================================================
+
+    def set_compression_level(
+        self,
+        compression_level: int,
+    ) -> AppSettingsSchema:
+        """
+        Set ZIP compression level.
+
+        Valid levels are defined by AppSettingsUpdateSchema
+        and currently range from 0 to 9.
+        """
+
+        return self.update_settings(
+            AppSettingsUpdateSchema(
+                compression_level=compression_level,
+            )
+        )
+
+    # =====================================================
     # RETENTION STATE
     # =====================================================
 

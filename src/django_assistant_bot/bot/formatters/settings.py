@@ -32,10 +32,42 @@ def format_settings_menu(
         f"🧹 نگهداری بکاپ‌ها: <b>{retention_status}</b>\n"
         "📦 تعداد بکاپ‌های نگهداری‌شده: "
         f"<b>{settings.retention_keep_last}</b>\n"
+        "🗜 سطح فشرده‌سازی: "
+        f"<b>{settings.compression_level}</b>\n"
         f"🌐 پروکسی: <b>{proxy_status}</b>\n"
         "\n"
         "از گزینه‌های زیر برای مدیریت تنظیمات "
         "استفاده کنید."
+    )
+
+
+# =========================================================
+# COMPRESSION LEVEL
+# =========================================================
+
+
+def format_compression_level_menu(
+    *,
+    current_level: int,
+) -> str:
+    """
+    Format compression-level selection screen.
+    """
+
+    return (
+        "🗜 <b>سطح فشرده‌سازی</b>\n"
+        "\n"
+        "سطح فشرده‌سازی فایل‌های بکاپ را انتخاب کنید.\n"
+        "\n"
+        f"مقدار فعلی: <b>{current_level}</b>\n"
+        "\n"
+        "• <b>0</b> — بدون فشرده‌سازی\n"
+        "• <b>1</b> — سریع‌ترین حالت\n"
+        "• <b>6</b> — متعادل و پیشنهادی\n"
+        "• <b>9</b> — بیشترین فشرده‌سازی\n"
+        "\n"
+        "سطح بالاتر معمولاً فایل کوچک‌تری تولید می‌کند، "
+        "اما CPU و زمان بیشتری مصرف می‌شود."
     )
 
 
@@ -94,6 +126,7 @@ def format_bot_disabled() -> str:
 
 __all__ = [
     "format_bot_disabled",
+    "format_compression_level_menu",
     "format_retention_keep_last_prompt",
     "format_settings_menu",
 ]

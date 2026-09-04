@@ -20,6 +20,7 @@ from django_assistant_bot.bot.context import (
 )
 from django_assistant_bot.bot.formatters.settings import (
     format_bot_disabled,
+    format_compression_level_menu,
     format_retention_keep_last_prompt,
     format_settings_menu,
 )
@@ -34,11 +35,14 @@ from django_assistant_bot.bot.keyboards.settings import (
     BACKUP_ENABLE_CALLBACK,
     BOT_DISABLE_CALLBACK,
     BOT_ENABLE_CALLBACK,
+    COMPRESSION_LEVEL_CALLBACK,
+    COMPRESSION_LEVEL_SET_PREFIX,
     RETENTION_DISABLE_CALLBACK,
     RETENTION_ENABLE_CALLBACK,
     RETENTION_KEEP_LAST_CALLBACK,
     RETENTION_KEEP_LAST_CANCEL_CALLBACK,
     SETTINGS_CALLBACK,
+    compression_level_keyboard,
     disabled_bot_keyboard,
     retention_keep_last_keyboard,
     settings_keyboard,
@@ -87,6 +91,7 @@ def build_settings_keyboard(
         backup_enabled=settings.backup_enabled,
         retention_enabled=settings.retention_enabled,
         retention_keep_last=settings.retention_keep_last,
+        compression_level=settings.compression_level,
     )
 
 
@@ -146,9 +151,6 @@ async def disable_bot_callback(
 ) -> None:
     """
     Disable the entire application.
-
-    Telegram polling remains alive so the bot can be
-    re-enabled later.
     """
 
     if not isinstance(
@@ -342,6 +344,132 @@ async def disable_backups_callback(
             settings,
         ),
         reply_markup=(build_settings_keyboard(settings)),
+    )
+
+
+# =========================================================
+# COMPRESSION MENU
+# =========================================================
+
+
+@router.callback_query(
+    F.data == COMPRESSION_LEVEL_CALLBACK,
+)
+async def compression_level_callback(
+    callback: CallbackQuery,
+    context: ApplicationContext,
+) -> None:
+    """
+    Display compression-level selection menu.
+    """
+
+    if not isinstance(
+        callback.message,
+        Message,
+    ):
+        await callback.answer()
+        return
+
+    try:
+        settings = context.settings.get_settings()
+
+    except SettingsPersistenceError:
+        await callback.answer(
+            "خطا در دریافت تنظیمات فشرده‌سازی.",
+            show_alert=True,
+        )
+        return
+
+    await callback.answer()
+
+    await callback.message.edit_text(
+        format_compression_level_menu(
+            current_level=(settings.compression_level),
+        ),
+        reply_markup=(
+            compression_level_keyboard(
+                current_level=(settings.compression_level),
+            )
+        ),
+    )
+
+
+# =========================================================
+# COMPRESSION SET
+# =========================================================
+
+
+@router.callback_query(
+    F.data.startswith(COMPRESSION_LEVEL_SET_PREFIX),
+)
+async def set_compression_level_callback(
+    callback: CallbackQuery,
+    context: ApplicationContext,
+) -> None:
+    """
+    Persist selected compression level.
+    """
+
+    callback_data = callback.data or ""
+
+    raw_level = callback_data.removeprefix(COMPRESSION_LEVEL_SET_PREFIX)
+
+    try:
+        compression_level = int(raw_level)
+
+    except ValueError:
+        await callback.answer(
+            "سطح فشرده‌سازی نامعتبر است.",
+            show_alert=True,
+        )
+        return
+
+    if not 0 <= compression_level <= 9:
+        await callback.answer(
+            "سطح فشرده‌سازی باید بین 0 تا 9 باشد.",
+            show_alert=True,
+        )
+        return
+
+    if not isinstance(
+        callback.message,
+        Message,
+    ):
+        await callback.answer()
+        return
+
+    try:
+        settings = context.settings.set_compression_level(
+            compression_level,
+        )
+
+    except ValidationError:
+        await callback.answer(
+            "سطح فشرده‌سازی نامعتبر است.",
+            show_alert=True,
+        )
+        return
+
+    except SettingsPersistenceError:
+        logger.exception("Could not update compression level.")
+
+        await callback.answer(
+            "خطا در ذخیره سطح فشرده‌سازی.",
+            show_alert=True,
+        )
+        return
+
+    await callback.answer("سطح فشرده‌سازی " f"روی {compression_level} تنظیم شد.")
+
+    await callback.message.edit_text(
+        format_compression_level_menu(
+            current_level=(settings.compression_level),
+        ),
+        reply_markup=(
+            compression_level_keyboard(
+                current_level=(settings.compression_level),
+            )
+        ),
     )
 
 
