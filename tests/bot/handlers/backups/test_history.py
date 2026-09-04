@@ -6,6 +6,7 @@ from datetime import (
 )
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import (
     AsyncMock,
     Mock,
@@ -14,7 +15,12 @@ from unittest.mock import (
 import pytest
 from aiogram.types import Message
 
-
+from django_assistant_bot.bot.handlers.backups.history import (
+    backup_history_all_callback,
+    backup_history_detail_callback,
+    backup_history_menu_callback,
+    backup_history_project_callback,
+)
 from django_assistant_bot.database.models.enums import (
     BackupStatus,
     DatabaseType,
@@ -36,12 +42,6 @@ from django_assistant_bot.services.backup import (
 from django_assistant_bot.services.project import (
     ProjectNotFoundError,
 )
-from django_assistant_bot.bot.handlers.backups.history import (
-    backup_history_all_callback,
-    backup_history_detail_callback,
-    backup_history_menu_callback,
-    backup_history_project_callback,
-)
 
 # =========================================================
 # BUILDERS
@@ -54,6 +54,10 @@ def build_project(
     project_id: str = "project-1",
     name: str = "Test Project",
 ) -> ProjectSchema:
+    """
+    Build a project schema used by backup-history tests.
+    """
+
     return ProjectSchema(
         id=project_id,
         name=name,
@@ -82,6 +86,10 @@ def build_history(
     status: BackupStatus = BackupStatus.SUCCESS,
     error_message: str | None = None,
 ) -> BackupHistorySchema:
+    """
+    Build a backup-history schema used by handler tests.
+    """
+
     now = datetime.now(
         timezone.utc,
     )
@@ -106,8 +114,18 @@ def build_history(
 
 
 def build_message() -> Message:
-    message = Mock(
-        spec=Message,
+    """
+    Build a minimal Message test double.
+
+    edit_text is replaced with AsyncMock because handlers
+    await this method during Telegram message updates.
+    """
+
+    message = cast(
+        Message,
+        Mock(
+            spec=Message,
+        ),
     )
 
     message.edit_text = AsyncMock()
@@ -119,6 +137,10 @@ def build_callback(
     *,
     data: str | None,
 ) -> SimpleNamespace:
+    """
+    Build a minimal CallbackQuery-like object.
+    """
+
     return SimpleNamespace(
         data=data,
         answer=AsyncMock(),
@@ -136,6 +158,11 @@ def build_context(
     list_error: Exception | None = None,
     history_error: Exception | None = None,
 ) -> SimpleNamespace:
+    """
+    Build the minimum application context required by
+    backup-history handlers.
+    """
+
     project_service = Mock()
 
     project_service.list_projects.return_value = (
@@ -144,6 +171,7 @@ def build_context(
 
     if project_error is not None:
         project_service.get_project.side_effect = project_error
+
     else:
         project_service.get_project.return_value = project
 
@@ -153,6 +181,7 @@ def build_context(
         history_service.list_for_project.side_effect = list_error
 
         history_service.list_all.side_effect = list_error
+
     else:
         history_service.list_for_project.return_value = (
             histories if histories is not None else []
@@ -164,6 +193,7 @@ def build_context(
 
     if history_error is not None:
         history_service.get_history.side_effect = history_error
+
     else:
         history_service.get_history.return_value = history
 
@@ -171,6 +201,82 @@ def build_context(
         projects=project_service,
         backup_history=history_service,
     )
+
+
+# =========================================================
+# MOCK HELPERS
+# =========================================================
+
+
+def get_edit_text_mock(
+    message: Message,
+) -> AsyncMock:
+    """
+    Return Message.edit_text as the AsyncMock installed
+    by build_message().
+
+    The cast exists only for static type checkers such as
+    Pylance. At runtime edit_text is always an AsyncMock in
+    these tests.
+    """
+
+    return cast(
+        AsyncMock,
+        message.edit_text,
+    )
+
+
+def get_edit_text_content(
+    message: Message,
+) -> str:
+    """
+    Return the text passed to Message.edit_text().
+    """
+
+    edit_text = get_edit_text_mock(
+        message,
+    )
+
+    call = edit_text.await_args
+
+    assert call is not None
+
+    assert call.args
+
+    text = call.args[0]
+
+    assert isinstance(
+        text,
+        str,
+    )
+
+    return text
+
+
+def get_keyboard_callbacks(
+    message: Message,
+) -> list[str]:
+    """
+    Extract callback_data values from the keyboard passed
+    to Message.edit_text().
+    """
+
+    edit_text = get_edit_text_mock(
+        message,
+    )
+
+    call = edit_text.await_args
+
+    assert call is not None
+
+    keyboard = call.kwargs["reply_markup"]
+
+    return [
+        button.callback_data
+        for row in keyboard.inline_keyboard
+        for button in row
+        if button.callback_data is not None
+    ]
 
 
 # =========================================================
@@ -212,19 +318,21 @@ async def test_history_menu_lists_projects(
 
     context.projects.list_projects.assert_called_once_with()
 
-    callback.message.edit_text.assert_awaited_once()
+    edit_text = get_edit_text_mock(
+        callback.message,
+    )
 
-    call = callback.message.edit_text.await_args
+    edit_text.assert_awaited_once()
 
-    text = call.args[0]
+    text = get_edit_text_content(
+        callback.message,
+    )
 
     assert "تاریخچه بکاپ‌ها" in text
 
-    keyboard = call.kwargs["reply_markup"]
-
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+    callback_data = get_keyboard_callbacks(
+        callback.message,
+    )
 
     assert "bh:p:project-1:0" in callback_data
 
@@ -268,9 +376,11 @@ async def test_empty_project_history(
         offset=0,
     )
 
-    call = callback.message.edit_text.await_args
+    text = get_edit_text_content(
+        callback.message,
+    )
 
-    assert "هنوز هیچ بکاپی" in call.args[0]
+    assert "هنوز هیچ بکاپی" in text
 
 
 # =========================================================
@@ -289,7 +399,7 @@ async def test_history_first_page(
     histories = [
         build_history(
             tmp_path,
-            history_id=f"history-{index}",
+            history_id=(f"history-{index}"),
             project_id=project.id,
         )
         for index in range(
@@ -318,15 +428,15 @@ async def test_history_first_page(
         offset=0,
     )
 
-    call = callback.message.edit_text.await_args
+    text = get_edit_text_content(
+        callback.message,
+    )
 
-    assert "صفحه: <b>1</b>" in call.args[0]
+    assert "📄 صفحه <b>1</b>" in text
 
-    keyboard = call.kwargs["reply_markup"]
-
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+    callback_data = get_keyboard_callbacks(
+        callback.message,
+    )
 
     assert not any(value == ("bh:p:" f"{project.id}:1") for value in callback_data)
 
@@ -347,7 +457,7 @@ async def test_history_first_page_has_next(
     histories = [
         build_history(
             tmp_path,
-            history_id=f"history-{index}",
+            history_id=(f"history-{index}"),
             project_id=project.id,
         )
         for index in range(
@@ -370,13 +480,9 @@ async def test_history_first_page_has_next(
         context,
     )
 
-    call = callback.message.edit_text.await_args
-
-    keyboard = call.kwargs["reply_markup"]
-
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+    callback_data = get_keyboard_callbacks(
+        callback.message,
+    )
 
     assert "bh:p:" f"{project.id}:1" in callback_data
 
@@ -422,15 +528,15 @@ async def test_history_second_page_has_previous(
         offset=5,
     )
 
-    call = callback.message.edit_text.await_args
+    text = get_edit_text_content(
+        callback.message,
+    )
 
-    assert "صفحه: <b>2</b>" in call.args[0]
+    assert "📄 صفحه <b>2</b>" in text
 
-    keyboard = call.kwargs["reply_markup"]
-
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+    callback_data = get_keyboard_callbacks(
+        callback.message,
+    )
 
     assert "bh:p:" f"{project.id}:0" in callback_data
 
@@ -476,9 +582,9 @@ async def test_history_detail_success(
         project.id,
     )
 
-    call = callback.message.edit_text.await_args
-
-    text = call.args[0]
+    text = get_edit_text_content(
+        callback.message,
+    )
 
     assert "جزئیات بکاپ" in text
 
@@ -488,11 +594,15 @@ async def test_history_detail_success(
 
     assert "checksum-value" in text
 
-    keyboard = call.kwargs["reply_markup"]
+    assert "🗄 دیتابیس" in text
 
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+    assert "📁 مدیا" in text
+
+    assert "🗜 فایل نهایی" in text
+
+    callback_data = get_keyboard_callbacks(
+        callback.message,
+    )
 
     assert f"bh:p:{project.id}:0" in callback_data
 
@@ -540,15 +650,17 @@ async def test_history_detail_failure(
         project.id,
     )
 
-    call = callback.message.edit_text.await_args
-
-    text = call.args[0]
+    text = get_edit_text_content(
+        callback.message,
+    )
 
     assert "❌ ناموفق" in text
 
     assert "Test Project" in text
 
     assert "database unavailable" in text
+
+    assert "جزئیات خطا" in text
 
 
 # =========================================================
@@ -576,7 +688,11 @@ async def test_unknown_history_shows_alert() -> None:
         show_alert=True,
     )
 
-    callback.message.edit_text.assert_not_awaited()
+    edit_text = get_edit_text_mock(
+        callback.message,
+    )
+
+    edit_text.assert_not_awaited()
 
 
 # =========================================================
@@ -604,7 +720,11 @@ async def test_history_project_not_found() -> None:
         show_alert=True,
     )
 
-    callback.message.edit_text.assert_not_awaited()
+    edit_text = get_edit_text_mock(
+        callback.message,
+    )
+
+    edit_text.assert_not_awaited()
 
 
 # =========================================================
@@ -639,7 +759,11 @@ async def test_history_persistence_failure(
         show_alert=True,
     )
 
-    callback.message.edit_text.assert_not_awaited()
+    edit_text = get_edit_text_mock(
+        callback.message,
+    )
+
+    edit_text.assert_not_awaited()
 
 
 # =========================================================
@@ -675,7 +799,11 @@ async def test_invalid_history_page_callback(
         show_alert=True,
     )
 
-    callback.message.edit_text.assert_not_awaited()
+    edit_text = get_edit_text_mock(
+        callback.message,
+    )
+
+    edit_text.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -696,7 +824,11 @@ async def test_negative_history_page_callback() -> None:
         show_alert=True,
     )
 
-    callback.message.edit_text.assert_not_awaited()
+    edit_text = get_edit_text_mock(
+        callback.message,
+    )
+
+    edit_text.assert_not_awaited()
 
 
 # =========================================================
@@ -732,7 +864,11 @@ async def test_invalid_history_detail_callback(
         show_alert=True,
     )
 
-    callback.message.edit_text.assert_not_awaited()
+    edit_text = get_edit_text_mock(
+        callback.message,
+    )
+
+    edit_text.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -753,7 +889,11 @@ async def test_negative_history_detail_page() -> None:
         show_alert=True,
     )
 
-    callback.message.edit_text.assert_not_awaited()
+    edit_text = get_edit_text_mock(
+        callback.message,
+    )
+
+    edit_text.assert_not_awaited()
 
 
 # =========================================================
@@ -786,9 +926,11 @@ async def test_all_history_empty() -> None:
 
     callback.answer.assert_awaited_once_with()
 
-    call = callback.message.edit_text.await_args
+    text = get_edit_text_content(
+        callback.message,
+    )
 
-    assert "هنوز هیچ بکاپی ثبت نشده است." in call.args[0]
+    assert "هنوز هیچ بکاپی ثبت نشده است." in text
 
 
 # =========================================================
@@ -809,7 +951,7 @@ async def test_all_history_first_page(
     histories = [
         build_history(
             tmp_path,
-            history_id=f"history-{index}",
+            history_id=(f"history-{index}"),
             project_id=project.id,
         )
         for index in range(
@@ -839,21 +981,21 @@ async def test_all_history_first_page(
         offset=0,
     )
 
-    call = callback.message.edit_text.await_args
-
-    text = call.args[0]
+    text = get_edit_text_content(
+        callback.message,
+    )
 
     assert "همه بکاپ‌ها" in text
 
-    assert "صفحه: <b>1</b>" in text
+    assert "📄 صفحه <b>1</b>" in text
 
     assert "Project One" in text
 
-    keyboard = call.kwargs["reply_markup"]
+    assert "وضعیت: <b>موفق</b>" in text
 
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+    callback_data = get_keyboard_callbacks(
+        callback.message,
+    )
 
     assert not any(value == "bh:a:1" for value in callback_data)
 
@@ -874,7 +1016,7 @@ async def test_all_history_first_page_has_next(
     histories = [
         build_history(
             tmp_path,
-            history_id=f"history-{index}",
+            history_id=(f"history-{index}"),
             project_id=project.id,
         )
         for index in range(
@@ -899,13 +1041,9 @@ async def test_all_history_first_page_has_next(
         context,
     )
 
-    call = callback.message.edit_text.await_args
-
-    keyboard = call.kwargs["reply_markup"]
-
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+    callback_data = get_keyboard_callbacks(
+        callback.message,
+    )
 
     assert "bh:a:1" in callback_data
 
@@ -952,17 +1090,15 @@ async def test_all_history_second_page_has_previous(
         offset=5,
     )
 
-    call = callback.message.edit_text.await_args
+    text = get_edit_text_content(
+        callback.message,
+    )
 
-    text = call.args[0]
+    assert "📄 صفحه <b>2</b>" in text
 
-    assert "صفحه: <b>2</b>" in text
-
-    keyboard = call.kwargs["reply_markup"]
-
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+    callback_data = get_keyboard_callbacks(
+        callback.message,
+    )
 
     assert "bh:a:0" in callback_data
 
@@ -1000,13 +1136,9 @@ async def test_all_history_detail_callback_uses_all_origin(
         context,
     )
 
-    call = callback.message.edit_text.await_args
-
-    keyboard = call.kwargs["reply_markup"]
-
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+    callback_data = get_keyboard_callbacks(
+        callback.message,
+    )
 
     assert "bh:a:0" in callback_data
 
@@ -1038,7 +1170,11 @@ async def test_all_history_persistence_failure() -> None:
         show_alert=True,
     )
 
-    callback.message.edit_text.assert_not_awaited()
+    edit_text = get_edit_text_mock(
+        callback.message,
+    )
+
+    edit_text.assert_not_awaited()
 
 
 # =========================================================
@@ -1073,7 +1209,11 @@ async def test_invalid_all_history_page_callback(
         show_alert=True,
     )
 
-    callback.message.edit_text.assert_not_awaited()
+    edit_text = get_edit_text_mock(
+        callback.message,
+    )
+
+    edit_text.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1094,7 +1234,11 @@ async def test_negative_all_history_page_callback() -> None:
         show_alert=True,
     )
 
-    callback.message.edit_text.assert_not_awaited()
+    edit_text = get_edit_text_mock(
+        callback.message,
+    )
+
+    edit_text.assert_not_awaited()
 
 
 # =========================================================
@@ -1128,8 +1272,8 @@ async def test_all_history_uses_project_id_when_project_missing(
         context,
     )
 
-    call = callback.message.edit_text.await_args
-
-    text = call.args[0]
+    text = get_edit_text_content(
+        callback.message,
+    )
 
     assert "deleted-project-id" in text

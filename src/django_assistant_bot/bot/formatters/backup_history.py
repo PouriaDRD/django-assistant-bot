@@ -13,6 +13,52 @@ from django_assistant_bot.utils.formatters import (
     format_size,
 )
 
+# =========================================================
+# HELPERS
+# =========================================================
+
+
+def format_backup_datetime(
+    value: datetime,
+) -> str:
+    """
+    Format backup datetime for Telegram display.
+    """
+
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def format_backup_duration(
+    *,
+    started_at: datetime,
+    finished_at: datetime | None,
+) -> str | None:
+    """
+    Format backup duration.
+    """
+
+    if finished_at is None:
+        return None
+
+    total_seconds = max(
+        0,
+        int((finished_at - started_at).total_seconds()),
+    )
+
+    if total_seconds < 60:
+        return f"{total_seconds} ثانیه"
+
+    minutes = total_seconds // 60
+
+    seconds = total_seconds % 60
+
+    return f"{minutes} دقیقه و " f"{seconds} ثانیه"
+
+
+# =========================================================
+# HISTORY MENU
+# =========================================================
+
 
 def format_backup_history_menu() -> str:
     """
@@ -22,9 +68,14 @@ def format_backup_history_menu() -> str:
     return (
         "🕘 <b>تاریخچه بکاپ‌ها</b>\n"
         "\n"
-        "می‌توانید همه بکاپ‌ها را مشاهده کنید "
-        "یا تاریخچه یک پروژه خاص را انتخاب کنید."
+        "در این بخش می‌توانید بکاپ‌های اخیر "
+        "تمام پروژه‌ها یا یک پروژه خاص را مشاهده کنید."
     )
+
+
+# =========================================================
+# GLOBAL HISTORY
+# =========================================================
 
 
 def format_backup_history_all(
@@ -41,12 +92,12 @@ def format_backup_history_all(
     """
 
     if not histories:
-        return "🕘 <b>همه بکاپ‌ها</b>\n" "\n" "هنوز هیچ بکاپی ثبت نشده است."
+        return "🕘 <b>تاریخچه همه بکاپ‌ها</b>\n" "\n" "هنوز هیچ بکاپی ثبت نشده است."
 
     lines: list[str] = [
-        "🕘 <b>همه بکاپ‌ها</b>",
+        "🕘 <b>تاریخچه همه بکاپ‌ها</b>",
         "",
-        (f"📄 صفحه: " f"<b>{page + 1}</b>"),
+        f"📄 صفحه <b>{page + 1}</b>",
         "",
     ]
 
@@ -54,7 +105,11 @@ def format_backup_history_all(
         histories,
         start=1,
     ):
-        status_icon = "✅" if history.status is BackupStatus.SUCCESS else "❌"
+        success = history.status is BackupStatus.SUCCESS
+
+        status_icon = "✅" if success else "❌"
+
+        status_text = "موفق" if success else "ناموفق"
 
         project_name = project_names.get(
             history.project_id,
@@ -68,19 +123,23 @@ def format_backup_history_all(
 
         lines.extend(
             [
-                (f"{status_icon} " f"<b>بکاپ #{index}</b>"),
-                ("📦 " f"{safe_project_name}"),
-                ("🕒 " f"{format_backup_datetime(
-                        history.started_at
-                    )}"),
-                ("🗜 " f"{format_size(
-                        history.archive_size_bytes
-                    )}"),
-                "",
+                (f"{status_icon} " f"<b>{safe_project_name}</b>"),
+                ("وضعیت: " f"<b>{status_text}</b>"),
+                ("🕒 " f"{format_backup_datetime(history.started_at)}"),
             ]
         )
 
+        if success:
+            lines.append(("🗜 " f"{format_size(history.archive_size_bytes)}"))
+
+        lines.append("")
+
     return "\n".join(lines).rstrip()
+
+
+# =========================================================
+# PROJECT HISTORY
+# =========================================================
 
 
 def format_backup_history_list(
@@ -102,41 +161,44 @@ def format_backup_history_list(
         return (
             "🕘 <b>تاریخچه بکاپ‌ها</b>\n"
             "\n"
-            f"📦 پروژه: "
-            f"<b>{safe_project_name}</b>\n"
+            f"📦 پروژه: <b>{safe_project_name}</b>\n"
             "\n"
-            "هنوز هیچ بکاپی برای این پروژه "
-            "ثبت نشده است."
+            "هنوز هیچ بکاپی برای این پروژه ثبت نشده است."
         )
 
     lines: list[str] = [
         "🕘 <b>تاریخچه بکاپ‌ها</b>",
         "",
-        (f"📦 پروژه: " f"<b>{safe_project_name}</b>"),
-        (f"📄 صفحه: " f"<b>{page + 1}</b>"),
+        f"📦 پروژه: <b>{safe_project_name}</b>",
+        f"📄 صفحه <b>{page + 1}</b>",
         "",
     ]
 
-    for index, history in enumerate(
-        histories,
-        start=1,
-    ):
-        status_icon = "✅" if history.status is BackupStatus.SUCCESS else "❌"
+    for history in histories:
+        success = history.status is BackupStatus.SUCCESS
+
+        status_icon = "✅" if success else "❌"
+
+        status_text = "موفق" if success else "ناموفق"
 
         lines.extend(
             [
-                (f"{status_icon} " f"<b>بکاپ #{index}</b>"),
-                ("🕒 " f"{format_backup_datetime(
-                        history.started_at
-                    )}"),
-                ("🗜 " f"{format_size(
-                        history.archive_size_bytes
-                    )}"),
-                "",
+                (f"{status_icon} " f"<b>{status_text}</b>"),
+                ("🕒 " f"{format_backup_datetime(history.started_at)}"),
             ]
         )
 
+        if success:
+            lines.append(("🗜 " f"{format_size(history.archive_size_bytes)}"))
+
+        lines.append("")
+
     return "\n".join(lines).rstrip()
+
+
+# =========================================================
+# DETAILS
+# =========================================================
 
 
 def format_backup_history_details(
@@ -155,7 +217,7 @@ def format_backup_history_details(
     lines: list[str] = [
         "🧾 <b>جزئیات بکاپ</b>",
         "",
-        (f"وضعیت: " f"<b>{status_text}</b>"),
+        ("وضعیت: " f"<b>{status_text}</b>"),
     ]
 
     if project_name is not None:
@@ -166,37 +228,40 @@ def format_backup_history_details(
 
         lines.append(("📦 پروژه: " f"<b>{safe_project_name}</b>"))
 
-    lines.append(("🕒 شروع: " f"<b>{format_backup_datetime(
-                history.started_at
-            )}</b>"))
+    lines.append(("🕒 شروع: " f"<b>{format_backup_datetime(history.started_at)}</b>"))
 
     if history.finished_at is not None:
-        lines.append(("🏁 پایان: " f"<b>{format_backup_datetime(
-                    history.finished_at
-                )}</b>"))
-
-    if history.finished_at is not None:
-        duration_seconds = max(
-            0,
-            int((history.finished_at - history.started_at).total_seconds()),
+        lines.append(
+            ("🏁 پایان: " f"<b>{format_backup_datetime(history.finished_at)}</b>")
         )
 
-        lines.append(("⏱ مدت: " f"<b>{duration_seconds} ثانیه</b>"))
+    duration = format_backup_duration(
+        started_at=history.started_at,
+        finished_at=history.finished_at,
+    )
+
+    if duration is not None:
+        lines.append(("⏱ مدت زمان: " f"<b>{duration}</b>"))
+
+    # -----------------------------------------------------
+    # SIZE DETAILS
+    # -----------------------------------------------------
 
     lines.extend(
         [
             "",
-            "🗄 <b>Database</b>",
-            format_size(history.database_size_bytes),
+            "📊 <b>جزئیات حجم</b>",
             "",
-            "📁 <b>Media</b>",
-            format_size(history.media_size_bytes),
-            (f"{history.media_file_count:,} " "فایل"),
-            "",
-            "🗜 <b>Archive</b>",
-            format_size(history.archive_size_bytes),
+            ("🗄 دیتابیس: " f"<b>{format_size(history.database_size_bytes)}</b>"),
+            ("📁 مدیا: " f"<b>{format_size(history.media_size_bytes)}</b>"),
+            ("🧾 تعداد فایل‌های مدیا: " f"<b>{history.media_file_count:,}</b>"),
+            ("🗜 فایل نهایی: " f"<b>{format_size(history.archive_size_bytes)}</b>"),
         ]
     )
+
+    # -----------------------------------------------------
+    # CHECKSUM
+    # -----------------------------------------------------
 
     if history.checksum_value:
         algorithm = escape(
@@ -217,6 +282,10 @@ def format_backup_history_details(
             ]
         )
 
+    # -----------------------------------------------------
+    # ARCHIVE PATH
+    # -----------------------------------------------------
+
     if history.archive_path is not None:
         archive_path = escape(
             str(history.archive_path),
@@ -227,9 +296,13 @@ def format_backup_history_details(
             [
                 "",
                 "📍 <b>مسیر فایل</b>",
-                (f"<code>" f"{archive_path}" f"</code>"),
+                f"<code>{archive_path}</code>",
             ]
         )
+
+    # -----------------------------------------------------
+    # ERROR
+    # -----------------------------------------------------
 
     if history.error_message:
         error_message = escape(
@@ -243,26 +316,17 @@ def format_backup_history_details(
         lines.extend(
             [
                 "",
-                "⚠️ <b>خطا</b>",
-                (f"<code>" f"{error_message}" f"</code>"),
+                "⚠️ <b>جزئیات خطا</b>",
+                f"<code>{error_message}</code>",
             ]
         )
 
     return "\n".join(lines)
 
 
-def format_backup_datetime(
-    value: datetime,
-) -> str:
-    """
-    Format backup datetime for Telegram display.
-    """
-
-    return value.strftime("%Y-%m-%d %H:%M:%S")
-
-
 __all__ = [
     "format_backup_datetime",
+    "format_backup_duration",
     "format_backup_history_all",
     "format_backup_history_details",
     "format_backup_history_list",
