@@ -13,6 +13,7 @@ from aiogram.types import (
 )
 
 from django_assistant_bot.bot.handlers.scheduler import (
+    scheduler_filter_callback,
     scheduler_interval_callback,
     scheduler_interval_set_callback,
     scheduler_menu_callback,
@@ -52,6 +53,10 @@ def build_project(
     interval: int = 5,
     unit: ScheduleUnit = ScheduleUnit.MINUTES,
 ) -> ProjectSchema:
+    """
+    Build a project schema for scheduler handler tests.
+    """
+
     return ProjectSchema(
         id=project_id,
         name=name,
@@ -73,6 +78,10 @@ def build_project(
 
 
 def build_message() -> Message:
+    """
+    Build mocked Telegram message.
+    """
+
     message = Mock(
         spec=Message,
     )
@@ -86,6 +95,10 @@ def build_callback(
     *,
     data: str | None,
 ) -> SimpleNamespace:
+    """
+    Build mocked Telegram callback query.
+    """
+
     return SimpleNamespace(
         data=data,
         answer=AsyncMock(),
@@ -103,10 +116,15 @@ def build_context(
     update_error: Exception | None = None,
     scheduler_error: Exception | None = None,
 ) -> SimpleNamespace:
+    """
+    Build mocked application context.
+    """
+
     project_service = Mock()
 
     if list_error is not None:
         project_service.list_projects.side_effect = list_error
+
     else:
         project_service.list_projects.return_value = (
             projects if projects is not None else []
@@ -114,6 +132,7 @@ def build_context(
 
     if project_error is not None:
         project_service.get_project.side_effect = project_error
+
     else:
         project_service.get_project.return_value = project
 
@@ -136,6 +155,25 @@ def build_context(
         projects=project_service,
         scheduler=scheduler,
     )
+
+
+def get_keyboard_callback_data(
+    callback: SimpleNamespace,
+) -> list[str]:
+    """
+    Return all callback_data values from the last edited keyboard.
+    """
+
+    call = callback.message.edit_text.await_args
+
+    keyboard = call.kwargs["reply_markup"]
+
+    return [
+        button.callback_data
+        for row in keyboard.inline_keyboard
+        for button in row
+        if button.callback_data is not None
+    ]
 
 
 # =========================================================
@@ -178,13 +216,15 @@ async def test_scheduler_menu_lists_projects(
 
     assert "مدیریت زمان‌بندی بکاپ‌ها" in text
 
-    keyboard = call.kwargs["reply_markup"]
+    assert "نمایش: <b>همه</b>" in text
 
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+    callback_data = get_keyboard_callback_data(callback)
 
     assert f"sc:p:{project.id}:s" in callback_data
+
+    assert "sc:f:a" in callback_data
+
+    assert "sc:f:i" in callback_data
 
 
 @pytest.mark.asyncio
@@ -211,6 +251,267 @@ async def test_scheduler_menu_persistence_failure() -> None:
 
 
 # =========================================================
+# SCHEDULER FILTER
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_scheduler_active_filter_only_lists_active_projects(
+    tmp_path: Path,
+) -> None:
+    active_project = build_project(
+        tmp_path,
+        project_id="active-project",
+        name="Active Project",
+        enabled=True,
+        schedule_enabled=True,
+    )
+
+    schedule_disabled_project = build_project(
+        tmp_path,
+        project_id="schedule-disabled",
+        name="Schedule Disabled",
+        enabled=True,
+        schedule_enabled=False,
+    )
+
+    disabled_project = build_project(
+        tmp_path,
+        project_id="disabled-project",
+        name="Disabled Project",
+        enabled=False,
+        schedule_enabled=True,
+    )
+
+    callback = build_callback(
+        data="sc:f:a",
+    )
+
+    context = build_context(
+        projects=[
+            active_project,
+            schedule_disabled_project,
+            disabled_project,
+        ],
+    )
+
+    await scheduler_filter_callback(
+        callback,
+        context,
+    )
+
+    context.projects.list_projects.assert_called_once_with()
+
+    callback.answer.assert_awaited_once_with()
+
+    callback.message.edit_text.assert_awaited_once()
+
+    call = callback.message.edit_text.await_args
+
+    text = call.args[0]
+
+    assert "نمایش: <b>فعال</b>" in text
+
+    callback_data = get_keyboard_callback_data(callback)
+
+    assert f"sc:p:{active_project.id}:a" in callback_data
+
+    assert not any(schedule_disabled_project.id in value for value in callback_data)
+
+    assert not any(disabled_project.id in value for value in callback_data)
+
+
+@pytest.mark.asyncio
+async def test_scheduler_inactive_filter_lists_inactive_projects(
+    tmp_path: Path,
+) -> None:
+    active_project = build_project(
+        tmp_path,
+        project_id="active-project",
+        name="Active Project",
+        enabled=True,
+        schedule_enabled=True,
+    )
+
+    schedule_disabled_project = build_project(
+        tmp_path,
+        project_id="schedule-disabled",
+        name="Schedule Disabled",
+        enabled=True,
+        schedule_enabled=False,
+    )
+
+    disabled_project = build_project(
+        tmp_path,
+        project_id="disabled-project",
+        name="Disabled Project",
+        enabled=False,
+        schedule_enabled=True,
+    )
+
+    callback = build_callback(
+        data="sc:f:i",
+    )
+
+    context = build_context(
+        projects=[
+            active_project,
+            schedule_disabled_project,
+            disabled_project,
+        ],
+    )
+
+    await scheduler_filter_callback(
+        callback,
+        context,
+    )
+
+    context.projects.list_projects.assert_called_once_with()
+
+    callback.answer.assert_awaited_once_with()
+
+    callback.message.edit_text.assert_awaited_once()
+
+    call = callback.message.edit_text.await_args
+
+    text = call.args[0]
+
+    assert "نمایش: <b>غیرفعال</b>" in text
+
+    callback_data = get_keyboard_callback_data(callback)
+
+    assert f"sc:p:{schedule_disabled_project.id}:i" in callback_data
+
+    assert f"sc:p:{disabled_project.id}:i" in callback_data
+
+    assert not any(active_project.id in value for value in callback_data)
+
+
+@pytest.mark.asyncio
+async def test_scheduler_active_filter_preserves_origin(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+        project_id="project-active",
+        enabled=True,
+        schedule_enabled=True,
+    )
+
+    callback = build_callback(
+        data="sc:f:a",
+    )
+
+    context = build_context(
+        projects=[
+            project,
+        ],
+    )
+
+    await scheduler_filter_callback(
+        callback,
+        context,
+    )
+
+    callback_data = get_keyboard_callback_data(callback)
+
+    assert f"sc:p:{project.id}:a" in callback_data
+
+    assert f"sc:p:{project.id}:s" not in callback_data
+
+
+@pytest.mark.asyncio
+async def test_scheduler_inactive_filter_preserves_origin(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+        project_id="project-inactive",
+        enabled=True,
+        schedule_enabled=False,
+    )
+
+    callback = build_callback(
+        data="sc:f:i",
+    )
+
+    context = build_context(
+        projects=[
+            project,
+        ],
+    )
+
+    await scheduler_filter_callback(
+        callback,
+        context,
+    )
+
+    callback_data = get_keyboard_callback_data(callback)
+
+    assert f"sc:p:{project.id}:i" in callback_data
+
+    assert f"sc:p:{project.id}:s" not in callback_data
+
+
+@pytest.mark.asyncio
+async def test_scheduler_filter_persistence_failure() -> None:
+    callback = build_callback(
+        data="sc:f:a",
+    )
+
+    context = build_context(
+        list_error=ProjectPersistenceError("database error"),
+    )
+
+    await scheduler_filter_callback(
+        callback,
+        context,
+    )
+
+    callback.answer.assert_awaited_once_with(
+        "خطا در دریافت پروژه‌ها.",
+        show_alert=True,
+    )
+
+    callback.message.edit_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "data",
+    [
+        "sc:f:",
+        "sc:f:x",
+        "sc:f:active",
+        "sc:f:inactive",
+        "sc:f:s",
+    ],
+)
+async def test_invalid_scheduler_filter_callback(
+    data: str,
+) -> None:
+    callback = build_callback(
+        data=data,
+    )
+
+    context = build_context()
+
+    await scheduler_filter_callback(
+        callback,
+        context,
+    )
+
+    callback.answer.assert_awaited_once_with(
+        "فیلتر زمان‌بندی نامعتبر است.",
+        show_alert=True,
+    )
+
+    context.projects.list_projects.assert_not_called()
+
+    callback.message.edit_text.assert_not_awaited()
+
+
+# =========================================================
 # PROJECT PAGE
 # =========================================================
 
@@ -224,7 +525,7 @@ async def test_scheduler_project_from_global_menu(
     )
 
     callback = build_callback(
-        data=(f"sc:p:{project.id}:s"),
+        data=(f"sc:p:" f"{project.id}:s"),
     )
 
     context = build_context(
@@ -244,17 +545,13 @@ async def test_scheduler_project_from_global_menu(
 
     assert "زمان‌بندی بکاپ" in call.args[0]
 
-    keyboard = call.kwargs["reply_markup"]
-
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+    callback_data = get_keyboard_callback_data(callback)
 
     assert "scheduler" in callback_data
 
 
 @pytest.mark.asyncio
-async def test_scheduler_project_from_project_details(
+async def test_scheduler_project_from_active_filter(
     tmp_path: Path,
 ) -> None:
     project = build_project(
@@ -262,7 +559,7 @@ async def test_scheduler_project_from_project_details(
     )
 
     callback = build_callback(
-        data=(f"sc:p:{project.id}:p"),
+        data=(f"sc:p:" f"{project.id}:a"),
     )
 
     context = build_context(
@@ -274,13 +571,60 @@ async def test_scheduler_project_from_project_details(
         context,
     )
 
-    call = callback.message.edit_text.await_args
+    callback_data = get_keyboard_callback_data(callback)
 
-    keyboard = call.kwargs["reply_markup"]
+    assert "sc:f:a" in callback_data
 
-    callback_data = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
+
+@pytest.mark.asyncio
+async def test_scheduler_project_from_inactive_filter(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+        schedule_enabled=False,
+    )
+
+    callback = build_callback(
+        data=(f"sc:p:" f"{project.id}:i"),
+    )
+
+    context = build_context(
+        project=project,
+    )
+
+    await scheduler_project_callback(
+        callback,
+        context,
+    )
+
+    callback_data = get_keyboard_callback_data(callback)
+
+    assert "sc:f:i" in callback_data
+
+
+@pytest.mark.asyncio
+async def test_scheduler_project_from_project_details(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    callback = build_callback(
+        data=(f"sc:p:" f"{project.id}:p"),
+    )
+
+    context = build_context(
+        project=project,
+    )
+
+    await scheduler_project_callback(
+        callback,
+        context,
+    )
+
+    callback_data = get_keyboard_callback_data(callback)
 
     assert f"project:view:{project.id}" in callback_data
 
@@ -328,7 +672,7 @@ async def test_scheduler_toggle_disables_schedule(
     )
 
     callback = build_callback(
-        data=(f"sc:t:{project.id}:s"),
+        data=(f"sc:t:" f"{project.id}:s"),
     )
 
     context = build_context(
@@ -372,7 +716,7 @@ async def test_scheduler_toggle_enables_schedule(
     )
 
     callback = build_callback(
-        data=(f"sc:t:{project.id}:p"),
+        data=(f"sc:t:" f"{project.id}:p"),
     )
 
     context = build_context(
@@ -396,6 +740,72 @@ async def test_scheduler_toggle_enables_schedule(
 
 
 @pytest.mark.asyncio
+async def test_scheduler_toggle_preserves_active_origin(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+        schedule_enabled=True,
+    )
+
+    updated = build_project(
+        tmp_path,
+        schedule_enabled=False,
+    )
+
+    callback = build_callback(
+        data=(f"sc:t:" f"{project.id}:a"),
+    )
+
+    context = build_context(
+        project=project,
+        updated=updated,
+    )
+
+    await scheduler_toggle_callback(
+        callback,
+        context,
+    )
+
+    callback_data = get_keyboard_callback_data(callback)
+
+    assert "sc:f:a" in callback_data
+
+
+@pytest.mark.asyncio
+async def test_scheduler_toggle_preserves_inactive_origin(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+        schedule_enabled=False,
+    )
+
+    updated = build_project(
+        tmp_path,
+        schedule_enabled=True,
+    )
+
+    callback = build_callback(
+        data=(f"sc:t:" f"{project.id}:i"),
+    )
+
+    context = build_context(
+        project=project,
+        updated=updated,
+    )
+
+    await scheduler_toggle_callback(
+        callback,
+        context,
+    )
+
+    callback_data = get_keyboard_callback_data(callback)
+
+    assert "sc:f:i" in callback_data
+
+
+@pytest.mark.asyncio
 async def test_scheduler_toggle_survives_scheduler_failure(
     tmp_path: Path,
 ) -> None:
@@ -410,7 +820,7 @@ async def test_scheduler_toggle_survives_scheduler_failure(
     )
 
     callback = build_callback(
-        data=(f"sc:t:{project.id}:s"),
+        data=(f"sc:t:" f"{project.id}:s"),
     )
 
     context = build_context(
@@ -431,7 +841,6 @@ async def test_scheduler_toggle_survives_scheduler_failure(
 
     context.scheduler.sync_project.assert_called_once_with(updated)
 
-    # Persisted schedule mutation remains successful.
     callback.answer.assert_awaited_once_with("زمان‌بندی غیرفعال شد.")
 
     callback.message.edit_text.assert_awaited_once()
@@ -452,7 +861,7 @@ async def test_scheduler_interval_menu(
     )
 
     callback = build_callback(
-        data=(f"sc:i:{project.id}:s"),
+        data=(f"sc:i:" f"{project.id}:s"),
     )
 
     context = build_context(
@@ -495,7 +904,7 @@ async def test_scheduler_interval_update(
     )
 
     callback = build_callback(
-        data=(f"sc:is:{project.id}:s:15"),
+        data=(f"sc:is:" f"{project.id}:s:15"),
     )
 
     context = build_context(
@@ -571,7 +980,7 @@ async def test_scheduler_unit_menu(
     )
 
     callback = build_callback(
-        data=(f"sc:u:{project.id}:p"),
+        data=(f"sc:u:" f"{project.id}:p"),
     )
 
     context = build_context(
@@ -613,7 +1022,7 @@ async def test_scheduler_unit_update(
     )
 
     callback = build_callback(
-        data=(f"sc:us:{project.id}:p:hours"),
+        data=(f"sc:us:" f"{project.id}:p:hours"),
     )
 
     context = build_context(
@@ -695,7 +1104,7 @@ async def test_scheduler_unit_persistence_failure() -> None:
 
 
 # =========================================================
-# MALFORMED CALLBACKS
+# MALFORMED PROJECT CALLBACKS
 # =========================================================
 
 
@@ -730,6 +1139,11 @@ async def test_invalid_scheduler_project_callback(
     callback.message.edit_text.assert_not_awaited()
 
 
+# =========================================================
+# MALFORMED INTERVAL CALLBACKS
+# =========================================================
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "data",
@@ -760,6 +1174,11 @@ async def test_invalid_scheduler_interval_callback(
     context.projects.update_schedule.assert_not_called()
 
     context.scheduler.sync_project.assert_not_called()
+
+
+# =========================================================
+# MALFORMED UNIT CALLBACKS
+# =========================================================
 
 
 @pytest.mark.asyncio

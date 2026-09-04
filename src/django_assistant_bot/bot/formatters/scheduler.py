@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from html import escape
+from typing import Literal
 
 from django_assistant_bot.database.models.enums import (
     ScheduleUnit,
@@ -9,12 +10,23 @@ from django_assistant_bot.schemas.project import (
     ProjectSchema,
 )
 
+ScheduleFilter = Literal[
+    "s",
+    "a",
+    "i",
+]
+
+
+# =========================================================
+# UNIT
+# =========================================================
+
 
 def format_schedule_unit(
     unit: ScheduleUnit,
 ) -> str:
     """
-    Return Persian label for a schedule unit.
+    Return Persian label for schedule unit.
     """
 
     labels = {
@@ -26,14 +38,16 @@ def format_schedule_unit(
     return labels[unit]
 
 
+# =========================================================
+# STATUS
+# =========================================================
+
+
 def format_schedule_status(
     project: ProjectSchema,
 ) -> str:
     """
-    Return effective schedule status.
-
-    Project status has priority because a disabled project
-    cannot have an active runtime scheduler job.
+    Return effective project scheduler status.
     """
 
     if not project.enabled:
@@ -45,11 +59,45 @@ def format_schedule_status(
     return "🟢 فعال"
 
 
-def format_scheduler_menu(
-    projects: list[ProjectSchema],
+# =========================================================
+# FILTER
+# =========================================================
+
+
+def format_schedule_filter(
+    schedule_filter: ScheduleFilter,
 ) -> str:
     """
-    Format global scheduler management menu.
+    Return Persian label for scheduler filter.
+    """
+
+    labels: dict[
+        ScheduleFilter,
+        str,
+    ] = {
+        "s": "همه",
+        "a": "فعال",
+        "i": "غیرفعال",
+    }
+
+    return labels[schedule_filter]
+
+
+# =========================================================
+# SCHEDULER MENU
+# =========================================================
+
+
+def format_scheduler_menu(
+    projects: list[ProjectSchema],
+    *,
+    selected_filter: ScheduleFilter = "s",
+) -> str:
+    """
+    Format global scheduler-management menu.
+
+    Counts are always calculated from all projects.
+    Filtering only affects the keyboard project list.
     """
 
     total = len(projects)
@@ -60,6 +108,8 @@ def format_scheduler_menu(
 
     inactive = total - active
 
+    filter_label = format_schedule_filter(selected_filter)
+
     return (
         "⏰ <b>مدیریت زمان‌بندی بکاپ‌ها</b>\n"
         "\n"
@@ -67,9 +117,16 @@ def format_scheduler_menu(
         "پروژه‌ها را مدیریت کنید.\n"
         "\n"
         f"📦 تعداد پروژه‌ها: <b>{total}</b>\n"
-        f"🟢 زمان‌بندی فعال: <b>{active}</b>\n"
-        f"⚪ غیرفعال: <b>{inactive}</b>"
+        f"🟢 فعال: <b>{active}</b>\n"
+        f"⚪ غیرفعال: <b>{inactive}</b>\n"
+        "\n"
+        f"🔎 نمایش: <b>{filter_label}</b>"
     )
+
+
+# =========================================================
+# PROJECT SCHEDULE
+# =========================================================
 
 
 def format_project_schedule(
@@ -93,7 +150,7 @@ def format_project_schedule(
     if not project.enabled:
         effective_note = (
             "\n\n"
-            "⚠️ پروژه غیرفعال است؛ بنابراین job زمان‌بندی "
+            "⚠️ پروژه غیرفعال است؛ بنابراین زمان‌بندی "
             "تا زمان فعال شدن پروژه اجرا نخواهد شد."
         )
 
@@ -107,6 +164,11 @@ def format_project_schedule(
         f"<b>{project.schedule.interval} {unit}</b>"
         f"{effective_note}"
     )
+
+
+# =========================================================
+# INTERVAL MENU
+# =========================================================
 
 
 def format_schedule_interval_menu(
@@ -132,6 +194,11 @@ def format_schedule_interval_menu(
         "\n"
         "فاصله جدید را انتخاب کنید:"
     )
+
+
+# =========================================================
+# UNIT MENU
+# =========================================================
 
 
 def format_schedule_unit_menu(
@@ -160,6 +227,7 @@ def format_schedule_unit_menu(
 
 __all__ = [
     "format_project_schedule",
+    "format_schedule_filter",
     "format_schedule_interval_menu",
     "format_schedule_status",
     "format_schedule_unit",

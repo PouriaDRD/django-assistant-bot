@@ -25,6 +25,7 @@ from django_assistant_bot.bot.formatters.scheduler import (
     format_scheduler_menu,
 )
 from django_assistant_bot.bot.keyboards.scheduler import (
+    SCHEDULER_FILTER_PREFIX,
     SCHEDULER_INTERVAL_PREFIX,
     SCHEDULER_INTERVAL_SET_PREFIX,
     SCHEDULER_MENU_CALLBACK,
@@ -32,6 +33,7 @@ from django_assistant_bot.bot.keyboards.scheduler import (
     SCHEDULER_TOGGLE_PREFIX,
     SCHEDULER_UNIT_PREFIX,
     SCHEDULER_UNIT_SET_PREFIX,
+    ScheduleFilter,
     ScheduleOrigin,
     project_schedule_keyboard,
     schedule_interval_keyboard,
@@ -42,6 +44,7 @@ from django_assistant_bot.database.models.enums import (
     ScheduleUnit,
 )
 from django_assistant_bot.schemas.project import (
+    ProjectSchema,
     ScheduleUpdateSchema,
 )
 from django_assistant_bot.services.project import (
@@ -64,9 +67,37 @@ router = Router(
 # =========================================================
 
 
+def _parse_origin(
+    origin_raw: str,
+) -> ScheduleOrigin | None:
+    """
+    Parse scheduler navigation origin.
+    """
+
+    if origin_raw == "s":
+        return "s"
+
+    if origin_raw == "a":
+        return "a"
+
+    if origin_raw == "i":
+        return "i"
+
+    if origin_raw == "p":
+        return "p"
+
+    return None
+
+
 def _parse_project_origin(
     payload: str,
-) -> tuple[str, ScheduleOrigin] | None:
+) -> (
+    tuple[
+        str,
+        ScheduleOrigin,
+    ]
+    | None
+):
     """
     Parse:
         <project_id>:<origin>
@@ -84,13 +115,9 @@ def _parse_project_origin(
     if not project_id:
         return None
 
-    if origin_raw == "s":
-        origin: ScheduleOrigin = "s"
+    origin = _parse_origin(origin_raw)
 
-    elif origin_raw == "p":
-        origin = "p"
-
-    else:
+    if origin is None:
         return None
 
     return (
@@ -129,13 +156,9 @@ def _parse_project_origin_value(
     if not value:
         return None
 
-    if origin_raw == "s":
-        origin: ScheduleOrigin = "s"
+    origin = _parse_origin(origin_raw)
 
-    elif origin_raw == "p":
-        origin = "p"
-
-    else:
+    if origin is None:
         return None
 
     return (
@@ -143,6 +166,44 @@ def _parse_project_origin_value(
         origin,
         value,
     )
+
+
+# =========================================================
+# FILTERING
+# =========================================================
+
+
+def _filter_projects(
+    projects: list[ProjectSchema],
+    schedule_filter: ScheduleFilter,
+) -> list[ProjectSchema]:
+    """
+    Filter projects by effective scheduler state.
+
+    Active:
+        project enabled
+        AND schedule enabled
+
+    Inactive:
+        project disabled
+        OR schedule disabled
+    """
+
+    if schedule_filter == "a":
+        return [
+            project
+            for project in projects
+            if (project.enabled and project.schedule.enabled)
+        ]
+
+    if schedule_filter == "i":
+        return [
+            project
+            for project in projects
+            if not (project.enabled and project.schedule.enabled)
+        ]
+
+    return projects
 
 
 # =========================================================
@@ -209,7 +270,7 @@ async def _show_project_schedule(
 
     await _edit_message(
         callback,
-        text=format_project_schedule(project),
+        text=(format_project_schedule(project)),
         reply_markup=(
             project_schedule_keyboard(
                 project,
@@ -232,7 +293,7 @@ async def scheduler_menu_callback(
     context: ApplicationContext,
 ) -> None:
     """
-    Show all projects and schedule states.
+    Show all projects and scheduler states.
     """
 
     try:
@@ -249,8 +310,89 @@ async def scheduler_menu_callback(
 
     await _edit_message(
         callback,
-        text=format_scheduler_menu(projects),
-        reply_markup=(scheduler_menu_keyboard(projects)),
+        text=(
+            format_scheduler_menu(
+                projects,
+                selected_filter="s",
+            )
+        ),
+        reply_markup=(
+            scheduler_menu_keyboard(
+                projects,
+                selected_filter="s",
+            )
+        ),
+    )
+
+
+# =========================================================
+# SCHEDULER FILTER
+# =========================================================
+
+
+@router.callback_query(
+    F.data.startswith(SCHEDULER_FILTER_PREFIX),
+)
+async def scheduler_filter_callback(
+    callback: CallbackQuery,
+    context: ApplicationContext,
+) -> None:
+    """
+    Filter projects by effective scheduler status.
+    """
+
+    callback_data = callback.data
+
+    if not callback_data:
+        await callback.answer()
+        return
+
+    filter_raw = callback_data.removeprefix(SCHEDULER_FILTER_PREFIX)
+
+    if filter_raw == "a":
+        selected_filter: ScheduleFilter = "a"
+
+    elif filter_raw == "i":
+        selected_filter = "i"
+
+    else:
+        await callback.answer(
+            "فیلتر زمان‌بندی نامعتبر است.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        projects = context.projects.list_projects()
+
+    except ProjectPersistenceError:
+        await callback.answer(
+            "خطا در دریافت پروژه‌ها.",
+            show_alert=True,
+        )
+        return
+
+    filtered_projects = _filter_projects(
+        projects,
+        selected_filter,
+    )
+
+    await callback.answer()
+
+    await _edit_message(
+        callback,
+        text=(
+            format_scheduler_menu(
+                projects,
+                selected_filter=selected_filter,
+            )
+        ),
+        reply_markup=(
+            scheduler_menu_keyboard(
+                filtered_projects,
+                selected_filter=selected_filter,
+            )
+        ),
     )
 
 
@@ -374,7 +516,7 @@ async def scheduler_toggle_callback(
 
     await _edit_message(
         callback,
-        text=format_project_schedule(updated),
+        text=(format_project_schedule(updated)),
         reply_markup=(
             project_schedule_keyboard(
                 updated,
@@ -440,7 +582,7 @@ async def scheduler_interval_callback(
 
     await _edit_message(
         callback,
-        text=format_schedule_interval_menu(project),
+        text=(format_schedule_interval_menu(project)),
         reply_markup=(
             schedule_interval_keyboard(
                 project.id,
@@ -463,7 +605,7 @@ async def scheduler_interval_set_callback(
     context: ApplicationContext,
 ) -> None:
     """
-    Update schedule interval.
+    Update project schedule interval.
     """
 
     callback_data = callback.data
@@ -538,7 +680,7 @@ async def scheduler_interval_set_callback(
 
     await _edit_message(
         callback,
-        text=format_project_schedule(updated),
+        text=(format_project_schedule(updated)),
         reply_markup=(
             project_schedule_keyboard(
                 updated,
@@ -604,7 +746,7 @@ async def scheduler_unit_callback(
 
     await _edit_message(
         callback,
-        text=format_schedule_unit_menu(project),
+        text=(format_schedule_unit_menu(project)),
         reply_markup=(
             schedule_unit_keyboard(
                 project.id,
@@ -627,7 +769,7 @@ async def scheduler_unit_set_callback(
     context: ApplicationContext,
 ) -> None:
     """
-    Update schedule unit.
+    Update project schedule unit.
     """
 
     callback_data = callback.data
@@ -702,7 +844,7 @@ async def scheduler_unit_set_callback(
 
     await _edit_message(
         callback,
-        text=format_project_schedule(updated),
+        text=(format_project_schedule(updated)),
         reply_markup=(
             project_schedule_keyboard(
                 updated,

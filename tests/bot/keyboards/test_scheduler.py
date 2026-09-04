@@ -131,6 +131,82 @@ def test_scheduler_menu_contains_projects(
     assert "main:menu" in callbacks
 
 
+def test_scheduler_menu_contains_filters(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    keyboard = scheduler_menu_keyboard(
+        [
+            project,
+        ]
+    )
+
+    filter_row = keyboard.inline_keyboard[0]
+
+    assert len(filter_row) == 3
+
+    assert filter_row[0].text == "• همه"
+
+    assert filter_row[0].callback_data == "scheduler"
+
+    assert filter_row[1].text == "فعال"
+
+    assert filter_row[1].callback_data == "sc:f:a"
+
+    assert filter_row[2].text == "غیرفعال"
+
+    assert filter_row[2].callback_data == "sc:f:i"
+
+
+def test_scheduler_menu_marks_selected_active_filter(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    keyboard = scheduler_menu_keyboard(
+        [
+            project,
+        ],
+        selected_filter="a",
+    )
+
+    filter_row = keyboard.inline_keyboard[0]
+
+    assert filter_row[0].text == "همه"
+
+    assert filter_row[1].text == "• فعال"
+
+    assert filter_row[2].text == "غیرفعال"
+
+
+def test_scheduler_menu_marks_selected_inactive_filter(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    keyboard = scheduler_menu_keyboard(
+        [
+            project,
+        ],
+        selected_filter="i",
+    )
+
+    filter_row = keyboard.inline_keyboard[0]
+
+    assert filter_row[0].text == "همه"
+
+    assert filter_row[1].text == "فعال"
+
+    assert filter_row[2].text == "• غیرفعال"
+
+
 def test_scheduler_menu_marks_active_schedule(
     tmp_path: Path,
 ) -> None:
@@ -146,9 +222,9 @@ def test_scheduler_menu_marks_active_schedule(
         ]
     )
 
-    button = keyboard.inline_keyboard[0][0]
+    project_button = keyboard.inline_keyboard[1][0]
 
-    assert button.text.startswith("🟢")
+    assert project_button.text.startswith("🟢")
 
 
 def test_scheduler_menu_marks_disabled_schedule(
@@ -166,9 +242,9 @@ def test_scheduler_menu_marks_disabled_schedule(
         ]
     )
 
-    button = keyboard.inline_keyboard[0][0]
+    project_button = keyboard.inline_keyboard[1][0]
 
-    assert button.text.startswith("⚪")
+    assert project_button.text.startswith("⚪")
 
 
 def test_scheduler_menu_marks_disabled_project(
@@ -186,9 +262,47 @@ def test_scheduler_menu_marks_disabled_project(
         ]
     )
 
-    button = keyboard.inline_keyboard[0][0]
+    project_button = keyboard.inline_keyboard[1][0]
 
-    assert button.text.startswith("🔴")
+    assert project_button.text.startswith("🔴")
+
+
+def test_scheduler_menu_preserves_active_filter_origin(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    keyboard = scheduler_menu_keyboard(
+        [
+            project,
+        ],
+        selected_filter="a",
+    )
+
+    callbacks = get_callback_data(keyboard)
+
+    assert f"sc:p:{project.id}:a" in callbacks
+
+
+def test_scheduler_menu_preserves_inactive_filter_origin(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    keyboard = scheduler_menu_keyboard(
+        [
+            project,
+        ],
+        selected_filter="i",
+    )
+
+    callbacks = get_callback_data(keyboard)
+
+    assert f"sc:p:{project.id}:i" in callbacks
 
 
 # =========================================================
@@ -213,6 +327,40 @@ def test_project_schedule_back_to_scheduler_menu(
     assert "scheduler" in callbacks
 
     assert not any(callback.startswith("project:view:") for callback in callbacks)
+
+
+def test_project_schedule_back_to_active_filter(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    keyboard = project_schedule_keyboard(
+        project,
+        "a",
+    )
+
+    callbacks = get_callback_data(keyboard)
+
+    assert "sc:f:a" in callbacks
+
+
+def test_project_schedule_back_to_inactive_filter(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    keyboard = project_schedule_keyboard(
+        project,
+        "i",
+    )
+
+    callbacks = get_callback_data(keyboard)
+
+    assert "sc:f:i" in callbacks
 
 
 def test_project_schedule_back_to_project_details(
@@ -249,6 +397,40 @@ def test_interval_menu_back_preserves_scheduler_origin(
     assert f"sc:p:{project.id}:s" in callbacks
 
 
+def test_interval_menu_back_preserves_active_origin(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    keyboard = schedule_interval_keyboard(
+        project.id,
+        "a",
+    )
+
+    callbacks = get_callback_data(keyboard)
+
+    assert f"sc:p:{project.id}:a" in callbacks
+
+
+def test_interval_menu_back_preserves_inactive_origin(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    keyboard = schedule_interval_keyboard(
+        project.id,
+        "i",
+    )
+
+    callbacks = get_callback_data(keyboard)
+
+    assert f"sc:p:{project.id}:i" in callbacks
+
+
 def test_interval_menu_back_preserves_project_origin(
     tmp_path: Path,
 ) -> None:
@@ -283,6 +465,40 @@ def test_unit_menu_back_preserves_origin(
     assert f"sc:p:{project.id}:p" in callbacks
 
 
+def test_unit_menu_preserves_active_origin(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    keyboard = schedule_unit_keyboard(
+        project.id,
+        "a",
+    )
+
+    callbacks = get_callback_data(keyboard)
+
+    assert f"sc:p:{project.id}:a" in callbacks
+
+
+def test_unit_menu_preserves_inactive_origin(
+    tmp_path: Path,
+) -> None:
+    project = build_project(
+        tmp_path,
+    )
+
+    keyboard = schedule_unit_keyboard(
+        project.id,
+        "i",
+    )
+
+    callbacks = get_callback_data(keyboard)
+
+    assert f"sc:p:{project.id}:i" in callbacks
+
+
 # =========================================================
 # CALLBACK LIMIT
 # =========================================================
@@ -305,11 +521,32 @@ def test_scheduler_callbacks_fit_telegram_limit(
         scheduler_menu_keyboard(
             [
                 project,
-            ]
+            ],
+            selected_filter="s",
+        ),
+        scheduler_menu_keyboard(
+            [
+                project,
+            ],
+            selected_filter="a",
+        ),
+        scheduler_menu_keyboard(
+            [
+                project,
+            ],
+            selected_filter="i",
         ),
         project_schedule_keyboard(
             project,
             "s",
+        ),
+        project_schedule_keyboard(
+            project,
+            "a",
+        ),
+        project_schedule_keyboard(
+            project,
+            "i",
         ),
         project_schedule_keyboard(
             project,
@@ -318,6 +555,14 @@ def test_scheduler_callbacks_fit_telegram_limit(
         schedule_interval_keyboard(
             project.id,
             "s",
+        ),
+        schedule_interval_keyboard(
+            project.id,
+            "a",
+        ),
+        schedule_interval_keyboard(
+            project.id,
+            "i",
         ),
         schedule_interval_keyboard(
             project.id,
@@ -326,6 +571,14 @@ def test_scheduler_callbacks_fit_telegram_limit(
         schedule_unit_keyboard(
             project.id,
             "s",
+        ),
+        schedule_unit_keyboard(
+            project.id,
+            "a",
+        ),
+        schedule_unit_keyboard(
+            project.id,
+            "i",
         ),
         schedule_unit_keyboard(
             project.id,

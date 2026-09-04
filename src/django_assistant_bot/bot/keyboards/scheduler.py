@@ -15,8 +15,16 @@ from django_assistant_bot.schemas.project import (
 )
 
 ScheduleOrigin = Literal[
-    "s",
-    "p",
+    "s",  # Scheduler - all
+    "a",  # Scheduler - active
+    "i",  # Scheduler - inactive
+    "p",  # Project details
+]
+
+ScheduleFilter = Literal[
+    "s",  # All
+    "a",  # Active
+    "i",  # Inactive
 ]
 
 
@@ -26,6 +34,8 @@ ScheduleOrigin = Literal[
 
 
 SCHEDULER_MENU_CALLBACK = "scheduler"
+
+SCHEDULER_FILTER_PREFIX = "sc:f:"
 
 SCHEDULER_PROJECT_PREFIX = "sc:p:"
 SCHEDULER_TOGGLE_PREFIX = "sc:t:"
@@ -38,8 +48,24 @@ SCHEDULER_UNIT_SET_PREFIX = "sc:us:"
 
 
 # =========================================================
-# HELPERS
+# CALLBACK BUILDERS
 # =========================================================
+
+
+def build_scheduler_filter_callback(
+    schedule_filter: ScheduleFilter,
+) -> str:
+    """
+    Build scheduler filter callback.
+
+    The default "all" filter uses the existing
+    main scheduler callback.
+    """
+
+    if schedule_filter == "s":
+        return SCHEDULER_MENU_CALLBACK
+
+    return f"{SCHEDULER_FILTER_PREFIX}" f"{schedule_filter}"
 
 
 def build_project_schedule_callback(
@@ -47,7 +73,7 @@ def build_project_schedule_callback(
     origin: ScheduleOrigin,
 ) -> str:
     """
-    Build project schedule callback.
+    Build project schedule-management callback.
     """
 
     return f"{SCHEDULER_PROJECT_PREFIX}" f"{project_id}:" f"{origin}"
@@ -60,48 +86,111 @@ def build_project_schedule_back_callback(
     """
     Build correct back-navigation callback.
 
-    s -> Scheduler menu
-    p -> Project details
+    Navigation:
+        s -> Scheduler / all
+        a -> Scheduler / active
+        i -> Scheduler / inactive
+        p -> Project details
     """
 
     if origin == "p":
-        return f"project:view:{project_id}"
+        return f"project:view:" f"{project_id}"
 
-    return SCHEDULER_MENU_CALLBACK
+    return build_scheduler_filter_callback(origin)
 
 
 # =========================================================
-# GLOBAL MENU
+# HELPERS
+# =========================================================
+
+
+def _filter_button_text(
+    *,
+    label: str,
+    value: ScheduleFilter,
+    selected: ScheduleFilter,
+) -> str:
+    """
+    Mark the currently selected filter.
+    """
+
+    if value == selected:
+        return f"• {label}"
+
+    return label
+
+
+def _project_status_icon(
+    project: ProjectSchema,
+) -> str:
+    """
+    Return visual status icon for scheduler list.
+    """
+
+    if project.enabled and project.schedule.enabled:
+        return "🟢"
+
+    if not project.enabled:
+        return "🔴"
+
+    return "⚪"
+
+
+# =========================================================
+# GLOBAL SCHEDULER MENU
 # =========================================================
 
 
 def scheduler_menu_keyboard(
     projects: list[ProjectSchema],
+    *,
+    selected_filter: ScheduleFilter = "s",
 ) -> InlineKeyboardMarkup:
     """
     Build scheduler project-selection keyboard.
+
+    The supplied projects are expected to already be filtered
+    by the handler when active/inactive filtering is used.
     """
 
-    rows: list[list[InlineKeyboardButton]] = []
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text=_filter_button_text(
+                    label="همه",
+                    value="s",
+                    selected=selected_filter,
+                ),
+                callback_data=(build_scheduler_filter_callback("s")),
+            ),
+            InlineKeyboardButton(
+                text=_filter_button_text(
+                    label="فعال",
+                    value="a",
+                    selected=selected_filter,
+                ),
+                callback_data=(build_scheduler_filter_callback("a")),
+            ),
+            InlineKeyboardButton(
+                text=_filter_button_text(
+                    label="غیرفعال",
+                    value="i",
+                    selected=selected_filter,
+                ),
+                callback_data=(build_scheduler_filter_callback("i")),
+            ),
+        ],
+    ]
 
     for project in projects:
-        if project.enabled and project.schedule.enabled:
-            icon = "🟢"
-
-        elif not project.enabled:
-            icon = "🔴"
-
-        else:
-            icon = "⚪"
-
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=(f"{icon} " f"{project.name}"),
+                    text=(f"{_project_status_icon(project)} " f"{project.name}"),
                     callback_data=(
                         build_project_schedule_callback(
                             project.id,
-                            "s",
+                            selected_filter,
                         )
                     ),
                 ),
@@ -194,7 +283,7 @@ def schedule_interval_keyboard(
     """
     Build predefined schedule interval options.
 
-    The selected interval keeps the existing schedule unit.
+    The selected interval keeps the current schedule unit.
     """
 
     intervals = (
@@ -314,6 +403,7 @@ def schedule_unit_keyboard(
 
 
 __all__ = [
+    "SCHEDULER_FILTER_PREFIX",
     "SCHEDULER_INTERVAL_PREFIX",
     "SCHEDULER_INTERVAL_SET_PREFIX",
     "SCHEDULER_MENU_CALLBACK",
@@ -321,8 +411,10 @@ __all__ = [
     "SCHEDULER_TOGGLE_PREFIX",
     "SCHEDULER_UNIT_PREFIX",
     "SCHEDULER_UNIT_SET_PREFIX",
+    "ScheduleFilter",
     "ScheduleOrigin",
     "build_project_schedule_callback",
+    "build_scheduler_filter_callback",
     "project_schedule_keyboard",
     "schedule_interval_keyboard",
     "schedule_unit_keyboard",
