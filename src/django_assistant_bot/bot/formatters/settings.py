@@ -26,10 +26,35 @@ def format_settings_menu(
         f"🤖 وضعیت ربات: <b>{bot_status}</b>\n"
         f"💾 سیستم بکاپ: <b>{backup_status}</b>\n"
         f"🧹 نگهداری بکاپ‌ها: <b>{retention_status}</b>\n"
+        "📦 تعداد بکاپ‌های نگهداری‌شده: "
+        f"<b>{settings.retention_keep_last}</b>\n"
         f"🌐 پروکسی: <b>{proxy_status}</b>\n"
         "\n"
         "از گزینه‌های زیر برای مدیریت تنظیمات "
         "استفاده کنید."
+    )
+
+
+def format_retention_keep_last_prompt(
+    *,
+    current_value: int,
+) -> str:
+    """
+    Format retention keep-last input prompt.
+    """
+
+    return (
+        "📦 <b>تعداد بکاپ‌های نگهداری‌شده</b>\n"
+        "\n"
+        "تعداد نسخه‌های موفقی که برای هر پروژه "
+        "باید نگهداری شوند را وارد کنید.\n"
+        "\n"
+        f"مقدار فعلی: <b>{current_value}</b>\n"
+        "\n"
+        "عدد واردشده باید حداقل <b>1</b> باشد.\n"
+        "\n"
+        "مثال:\n"
+        "<code>10</code>"
     )
 
 
@@ -55,5 +80,6 @@ def format_bot_disabled() -> str:
 
 __all__ = [
     "format_bot_disabled",
+    "format_retention_keep_last_prompt",
     "format_settings_menu",
 ]

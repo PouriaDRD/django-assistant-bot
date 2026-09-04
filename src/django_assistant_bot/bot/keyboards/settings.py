@@ -5,6 +5,11 @@ from aiogram.types import (
     InlineKeyboardMarkup,
 )
 
+# =========================================================
+# CALLBACKS
+# =========================================================
+
+
 SETTINGS_CALLBACK = "settings"
 
 BOT_ENABLE_CALLBACK = "settings:bot:enable"
@@ -15,11 +20,26 @@ BACKUP_ENABLE_CALLBACK = "settings:backup:enable"
 
 BACKUP_DISABLE_CALLBACK = "settings:backup:disable"
 
+RETENTION_ENABLE_CALLBACK = "settings:retention:enable"
+
+RETENTION_DISABLE_CALLBACK = "settings:retention:disable"
+
+RETENTION_KEEP_LAST_CALLBACK = "settings:retention:keep-last"
+
+RETENTION_KEEP_LAST_CANCEL_CALLBACK = "settings:retention:keep-last:cancel"
+
+
+# =========================================================
+# SETTINGS KEYBOARD
+# =========================================================
+
 
 def settings_keyboard(
     *,
     bot_enabled: bool,
     backup_enabled: bool,
+    retention_enabled: bool,
+    retention_keep_last: int,
 ) -> InlineKeyboardMarkup:
     """
     Build the main settings keyboard.
@@ -37,6 +57,24 @@ def settings_keyboard(
         ),
     )
 
+    retention_button = InlineKeyboardButton(
+        text=(
+            "🧹 غیرفعال کردن Retention"
+            if retention_enabled
+            else "🧹 فعال کردن Retention"
+        ),
+        callback_data=(
+            RETENTION_DISABLE_CALLBACK
+            if retention_enabled
+            else RETENTION_ENABLE_CALLBACK
+        ),
+    )
+
+    retention_keep_last_button = InlineKeyboardButton(
+        text=("📦 تعداد بکاپ‌های نگهداری‌شده: " f"{retention_keep_last}"),
+        callback_data=(RETENTION_KEEP_LAST_CALLBACK),
+    )
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -46,6 +84,12 @@ def settings_keyboard(
                 backup_button,
             ],
             [
+                retention_button,
+            ],
+            [
+                retention_keep_last_button,
+            ],
+            [
                 InlineKeyboardButton(
                     text="🔙 بازگشت",
                     callback_data="main:menu",
@@ -53,6 +97,34 @@ def settings_keyboard(
             ],
         ],
     )
+
+
+# =========================================================
+# RETENTION INPUT KEYBOARD
+# =========================================================
+
+
+def retention_keep_last_keyboard() -> InlineKeyboardMarkup:
+    """
+    Build keyboard displayed while waiting for a new
+    retention keep-last value.
+    """
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ لغو",
+                    callback_data=(RETENTION_KEEP_LAST_CANCEL_CALLBACK),
+                ),
+            ],
+        ],
+    )
+
+
+# =========================================================
+# DISABLED BOT KEYBOARD
+# =========================================================
 
 
 def disabled_bot_keyboard() -> InlineKeyboardMarkup:
@@ -78,7 +150,12 @@ __all__ = [
     "BACKUP_ENABLE_CALLBACK",
     "BOT_DISABLE_CALLBACK",
     "BOT_ENABLE_CALLBACK",
+    "RETENTION_DISABLE_CALLBACK",
+    "RETENTION_ENABLE_CALLBACK",
+    "RETENTION_KEEP_LAST_CALLBACK",
+    "RETENTION_KEEP_LAST_CANCEL_CALLBACK",
     "SETTINGS_CALLBACK",
     "disabled_bot_keyboard",
+    "retention_keep_last_keyboard",
     "settings_keyboard",
 ]

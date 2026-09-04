@@ -138,3 +138,53 @@ class AppSettingsService:
                 backup_enabled=False,
             )
         )
+
+    # =====================================================
+    # RETENTION STATE
+    # =====================================================
+
+    def enable_retention(
+        self,
+    ) -> AppSettingsSchema:
+        """
+        Enable automatic backup retention cleanup.
+        """
+
+        return self.update_settings(
+            AppSettingsUpdateSchema(
+                retention_enabled=True,
+            )
+        )
+
+    def disable_retention(
+        self,
+    ) -> AppSettingsSchema:
+        """
+        Disable automatic backup retention cleanup.
+        """
+
+        return self.update_settings(
+            AppSettingsUpdateSchema(
+                retention_enabled=False,
+            )
+        )
+
+    def set_retention_keep_last(
+        self,
+        keep_last: int,
+    ) -> AppSettingsSchema:
+        """
+        Set the number of successful backups retained
+        per project.
+        """
+
+        return self.update_settings(
+            AppSettingsUpdateSchema(
+                retention_keep_last=keep_last,
+            )
+        )
+
+
+__all__ = [
+    "AppSettingsService",
+]

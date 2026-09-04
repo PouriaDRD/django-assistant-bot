@@ -206,3 +206,72 @@ def test_backup_state_helpers_preserve_bot_state(
 
     assert settings.bot_enabled is False
     assert settings.backup_enabled is False
+
+
+# =========================================================
+# RETENTION SETTINGS
+# =========================================================
+
+
+def test_disable_retention(
+    service: AppSettingsService,
+) -> None:
+    updated = service.disable_retention()
+
+    assert updated.retention_enabled is False
+
+    persisted = service.get_settings()
+
+    assert persisted.retention_enabled is False
+
+
+def test_enable_retention(
+    service: AppSettingsService,
+) -> None:
+    service.disable_retention()
+
+    updated = service.enable_retention()
+
+    assert updated.retention_enabled is True
+
+    persisted = service.get_settings()
+
+    assert persisted.retention_enabled is True
+
+
+def test_set_retention_keep_last(
+    service: AppSettingsService,
+) -> None:
+    updated = service.set_retention_keep_last(
+        25,
+    )
+
+    assert updated.retention_keep_last == 25
+
+    persisted = service.get_settings()
+
+    assert persisted.retention_keep_last == 25
+
+
+def test_retention_helpers_preserve_other_settings(
+    service: AppSettingsService,
+) -> None:
+    service.disable_bot()
+    service.disable_backups()
+
+    updated = service.set_retention_keep_last(
+        15,
+    )
+
+    assert updated.retention_keep_last == 15
+    assert updated.bot_enabled is False
+    assert updated.backup_enabled is False
+
+
+def test_invalid_retention_keep_last_fails() -> None:
+    with pytest.raises(
+        ValidationError,
+    ):
+        AppSettingsUpdateSchema(
+            retention_keep_last=0,
+        )

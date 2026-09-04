@@ -6,16 +6,21 @@ from aiogram import (
     F,
     Router,
 )
+from aiogram.fsm.context import (
+    FSMContext,
+)
 from aiogram.types import (
     CallbackQuery,
     Message,
 )
+from pydantic import ValidationError
 
 from django_assistant_bot.bot.context import (
     ApplicationContext,
 )
 from django_assistant_bot.bot.formatters.settings import (
     format_bot_disabled,
+    format_retention_keep_last_prompt,
     format_settings_menu,
 )
 from django_assistant_bot.bot.handlers.common import (
@@ -29,22 +34,60 @@ from django_assistant_bot.bot.keyboards.settings import (
     BACKUP_ENABLE_CALLBACK,
     BOT_DISABLE_CALLBACK,
     BOT_ENABLE_CALLBACK,
+    RETENTION_DISABLE_CALLBACK,
+    RETENTION_ENABLE_CALLBACK,
+    RETENTION_KEEP_LAST_CALLBACK,
+    RETENTION_KEEP_LAST_CANCEL_CALLBACK,
     SETTINGS_CALLBACK,
     disabled_bot_keyboard,
+    retention_keep_last_keyboard,
     settings_keyboard,
+)
+from django_assistant_bot.bot.states.settings import (
+    SettingsState,
 )
 from django_assistant_bot.services.settings import (
     SettingsPersistenceError,
 )
+
+# =========================================================
+# LOGGER
+# =========================================================
+
 
 logger = logging.getLogger(
     __name__,
 )
 
 
+# =========================================================
+# ROUTER
+# =========================================================
+
+
 router = Router(
     name="settings",
 )
+
+
+# =========================================================
+# HELPERS
+# =========================================================
+
+
+def build_settings_keyboard(
+    settings,
+):
+    """
+    Build settings keyboard from persisted settings.
+    """
+
+    return settings_keyboard(
+        bot_enabled=settings.bot_enabled,
+        backup_enabled=settings.backup_enabled,
+        retention_enabled=settings.retention_enabled,
+        retention_keep_last=settings.retention_keep_last,
+    )
 
 
 # =========================================================
@@ -79,17 +122,13 @@ async def settings_menu_callback(
             "خطا در دریافت تنظیمات.",
             show_alert=True,
         )
-
         return
 
     await callback.message.edit_text(
         format_settings_menu(
             settings,
         ),
-        reply_markup=settings_keyboard(
-            bot_enabled=(settings.bot_enabled),
-            backup_enabled=(settings.backup_enabled),
-        ),
+        reply_markup=(build_settings_keyboard(settings)),
     )
 
 
@@ -117,7 +156,6 @@ async def disable_bot_callback(
         Message,
     ):
         await callback.answer()
-
         return
 
     try:
@@ -128,12 +166,8 @@ async def disable_bot_callback(
             "خطا در غیرفعال کردن ربات.",
             show_alert=True,
         )
-
         return
 
-    # Persistence is the source of truth. Even if pausing
-    # APScheduler fails, BackupCoordinator still prevents
-    # every backup while bot_enabled=False.
     try:
         context.scheduler.pause()
 
@@ -162,9 +196,6 @@ async def enable_bot_callback(
 ) -> None:
     """
     Re-enable application activity.
-
-    This callback is explicitly allowed by
-    BotEnabledMiddleware while the bot is disabled.
     """
 
     if not isinstance(
@@ -172,7 +203,6 @@ async def enable_bot_callback(
         Message,
     ):
         await callback.answer()
-
         return
 
     try:
@@ -183,7 +213,6 @@ async def enable_bot_callback(
             "خطا در فعال کردن ربات.",
             show_alert=True,
         )
-
         return
 
     scheduler_error = False
@@ -198,7 +227,7 @@ async def enable_bot_callback(
 
     if scheduler_error:
         await callback.answer(
-            ("ربات فعال شد، اما راه‌اندازی " "زمان‌بندی با خطا مواجه شد."),
+            "ربات فعال شد، اما راه‌اندازی " "زمان‌بندی با خطا مواجه شد.",
             show_alert=True,
         )
 
@@ -219,10 +248,7 @@ async def enable_bot_callback(
             format_settings_menu(
                 settings,
             ),
-            reply_markup=settings_keyboard(
-                bot_enabled=(settings.bot_enabled),
-                backup_enabled=(settings.backup_enabled),
-            ),
+            reply_markup=(build_settings_keyboard(settings)),
         )
 
         return
@@ -254,7 +280,6 @@ async def enable_backups_callback(
         Message,
     ):
         await callback.answer()
-
         return
 
     try:
@@ -265,7 +290,6 @@ async def enable_backups_callback(
             "خطا در فعال کردن بکاپ‌ها.",
             show_alert=True,
         )
-
         return
 
     await callback.answer("بکاپ‌ها فعال شدند.")
@@ -274,10 +298,7 @@ async def enable_backups_callback(
         format_settings_menu(
             settings,
         ),
-        reply_markup=settings_keyboard(
-            bot_enabled=(settings.bot_enabled),
-            backup_enabled=(settings.backup_enabled),
-        ),
+        reply_markup=(build_settings_keyboard(settings)),
     )
 
 
@@ -302,7 +323,6 @@ async def disable_backups_callback(
         Message,
     ):
         await callback.answer()
-
         return
 
     try:
@@ -313,7 +333,6 @@ async def disable_backups_callback(
             "خطا در غیرفعال کردن بکاپ‌ها.",
             show_alert=True,
         )
-
         return
 
     await callback.answer("بکاپ‌ها غیرفعال شدند.")
@@ -322,10 +341,250 @@ async def disable_backups_callback(
         format_settings_menu(
             settings,
         ),
-        reply_markup=settings_keyboard(
-            bot_enabled=(settings.bot_enabled),
-            backup_enabled=(settings.backup_enabled),
+        reply_markup=(build_settings_keyboard(settings)),
+    )
+
+
+# =========================================================
+# RETENTION ENABLE
+# =========================================================
+
+
+@router.callback_query(
+    F.data == RETENTION_ENABLE_CALLBACK,
+)
+async def enable_retention_callback(
+    callback: CallbackQuery,
+    context: ApplicationContext,
+) -> None:
+    """
+    Enable automatic retention cleanup.
+    """
+
+    if not isinstance(
+        callback.message,
+        Message,
+    ):
+        await callback.answer()
+        return
+
+    try:
+        settings = context.settings.enable_retention()
+
+    except SettingsPersistenceError:
+        await callback.answer(
+            "خطا در فعال کردن نگهداری بکاپ‌ها.",
+            show_alert=True,
+        )
+        return
+
+    await callback.answer("Retention فعال شد.")
+
+    await callback.message.edit_text(
+        format_settings_menu(
+            settings,
         ),
+        reply_markup=(build_settings_keyboard(settings)),
+    )
+
+
+# =========================================================
+# RETENTION DISABLE
+# =========================================================
+
+
+@router.callback_query(
+    F.data == RETENTION_DISABLE_CALLBACK,
+)
+async def disable_retention_callback(
+    callback: CallbackQuery,
+    context: ApplicationContext,
+) -> None:
+    """
+    Disable automatic retention cleanup.
+    """
+
+    if not isinstance(
+        callback.message,
+        Message,
+    ):
+        await callback.answer()
+        return
+
+    try:
+        settings = context.settings.disable_retention()
+
+    except SettingsPersistenceError:
+        await callback.answer(
+            "خطا در غیرفعال کردن نگهداری بکاپ‌ها.",
+            show_alert=True,
+        )
+        return
+
+    await callback.answer("Retention غیرفعال شد.")
+
+    await callback.message.edit_text(
+        format_settings_menu(
+            settings,
+        ),
+        reply_markup=(build_settings_keyboard(settings)),
+    )
+
+
+# =========================================================
+# RETENTION KEEP-LAST START
+# =========================================================
+
+
+@router.callback_query(
+    F.data == RETENTION_KEEP_LAST_CALLBACK,
+)
+async def retention_keep_last_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+    context: ApplicationContext,
+) -> None:
+    """
+    Start retention keep-last update flow.
+    """
+
+    if not isinstance(
+        callback.message,
+        Message,
+    ):
+        await callback.answer()
+        return
+
+    try:
+        settings = context.settings.get_settings()
+
+    except SettingsPersistenceError:
+        await callback.answer(
+            "خطا در دریافت تنظیمات.",
+            show_alert=True,
+        )
+        return
+
+    await state.set_state(
+        SettingsState.waiting_for_retention_keep_last,
+    )
+
+    await callback.answer()
+
+    await callback.message.edit_text(
+        format_retention_keep_last_prompt(
+            current_value=(settings.retention_keep_last),
+        ),
+        reply_markup=(retention_keep_last_keyboard()),
+    )
+
+
+# =========================================================
+# RETENTION KEEP-LAST INPUT
+# =========================================================
+
+
+@router.message(
+    SettingsState.waiting_for_retention_keep_last,
+)
+async def retention_keep_last_handler(
+    message: Message,
+    state: FSMContext,
+    context: ApplicationContext,
+) -> None:
+    """
+    Persist a new retention keep-last value.
+    """
+
+    raw_value = (message.text or "").strip()
+
+    try:
+        keep_last = int(raw_value)
+
+    except ValueError:
+        await message.answer(
+            "❌ مقدار واردشده معتبر نیست.\n"
+            "\n"
+            "لطفاً یک عدد صحیح بزرگ‌تر یا مساوی "
+            "با 1 وارد کنید."
+        )
+        return
+
+    if keep_last < 1:
+        await message.answer("❌ تعداد بکاپ‌ها باید حداقل 1 باشد.")
+        return
+
+    try:
+        settings = context.settings.set_retention_keep_last(
+            keep_last,
+        )
+
+    except ValidationError:
+        await message.answer("❌ مقدار واردشده معتبر نیست.")
+        return
+
+    except SettingsPersistenceError:
+        logger.exception("Could not update retention keep-last.")
+
+        await message.answer("❌ خطا در ذخیره تنظیمات Retention.")
+        return
+
+    await state.clear()
+
+    await message.answer(
+        "✅ تعداد بکاپ‌های نگهداری‌شده "
+        f"روی {keep_last} تنظیم شد.\n"
+        "\n"
+        + format_settings_menu(
+            settings,
+        ),
+        reply_markup=(build_settings_keyboard(settings)),
+    )
+
+
+# =========================================================
+# RETENTION KEEP-LAST CANCEL
+# =========================================================
+
+
+@router.callback_query(
+    F.data == RETENTION_KEEP_LAST_CANCEL_CALLBACK,
+)
+async def retention_keep_last_cancel_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+    context: ApplicationContext,
+) -> None:
+    """
+    Cancel retention keep-last input flow.
+    """
+
+    await state.clear()
+
+    if not isinstance(
+        callback.message,
+        Message,
+    ):
+        await callback.answer()
+        return
+
+    try:
+        settings = context.settings.get_settings()
+
+    except SettingsPersistenceError:
+        await callback.answer(
+            "خطا در دریافت تنظیمات.",
+            show_alert=True,
+        )
+        return
+
+    await callback.answer("تغییر مقدار لغو شد.")
+
+    await callback.message.edit_text(
+        format_settings_menu(
+            settings,
+        ),
+        reply_markup=(build_settings_keyboard(settings)),
     )
 
 
