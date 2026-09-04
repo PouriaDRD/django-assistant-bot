@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from datetime import (
+    datetime,
+    timezone,
+)
 from types import SimpleNamespace
 from unittest.mock import (
     AsyncMock,
@@ -13,19 +17,38 @@ from aiogram.types import (
 )
 
 from django_assistant_bot.bot.handlers.system_status import (
+    system_status_backup_callback,
     system_status_callback,
+    system_status_information_callback,
+    system_status_overview_callback,
+    system_status_projects_callback,
     system_status_refresh_callback,
+    system_status_resources_callback,
+    system_status_services_callback,
 )
 from django_assistant_bot.bot.keyboards.system_status import (
+    SYSTEM_STATUS_BACKUP_CALLBACK,
     SYSTEM_STATUS_CALLBACK,
+    SYSTEM_STATUS_OVERVIEW_CALLBACK,
+    SYSTEM_STATUS_PROJECTS_CALLBACK,
     SYSTEM_STATUS_REFRESH_CALLBACK,
+    SYSTEM_STATUS_RESOURCES_CALLBACK,
+    SYSTEM_STATUS_SERVICES_CALLBACK,
+    SYSTEM_STATUS_SYSTEM_CALLBACK,
+)
+from django_assistant_bot.database.models.enums import (
+    BackupStatus,
 )
 from django_assistant_bot.schemas.system_status import (
+    LatestBackupStatusSchema,
     SchedulerRuntimeStatus,
     SystemStatusSchema,
 )
 from django_assistant_bot.services.admin import (
     AdminPersistenceError,
+)
+from django_assistant_bot.services.backup.history_exceptions import (
+    BackupHistoryPersistenceError,
 )
 from django_assistant_bot.services.project import (
     ProjectPersistenceError,
@@ -39,12 +62,33 @@ from django_assistant_bot.services.settings import (
 # =========================================================
 
 
-def build_status() -> SystemStatusSchema:
+def build_status(
+    *,
+    with_backup: bool = True,
+) -> SystemStatusSchema:
     """
     Build complete system status snapshot for handler tests.
     """
 
     gib = 1024**3
+
+    latest_backup = None
+
+    if with_backup:
+        now = datetime.now(
+            timezone.utc,
+        )
+
+        latest_backup = LatestBackupStatusSchema(
+            history_id="history-1",
+            project_id="project-1",
+            project_name="DRD Shop",
+            status=BackupStatus.SUCCESS,
+            archive_size_bytes=(28 * 1024 * 1024),
+            started_at=now,
+            finished_at=now,
+            error_message=None,
+        )
 
     return SystemStatusSchema(
         # -------------------------------------------------
@@ -57,6 +101,10 @@ def build_status() -> SystemStatusSchema:
         database_healthy=True,
         scheduler_status=(SchedulerRuntimeStatus.RUNNING),
         uptime_seconds=(2 * 60 * 60 + 18 * 60),
+        # -------------------------------------------------
+        # BACKUP
+        # -------------------------------------------------
+        latest_backup=latest_backup,
         # -------------------------------------------------
         # PROJECTS
         # -------------------------------------------------
@@ -80,16 +128,16 @@ def build_status() -> SystemStatusSchema:
         # -------------------------------------------------
         # MEMORY
         # -------------------------------------------------
-        memory_total_bytes=16 * gib,
-        memory_used_bytes=6 * gib,
-        memory_available_bytes=10 * gib,
+        memory_total_bytes=(16 * gib),
+        memory_used_bytes=(6 * gib),
+        memory_available_bytes=(10 * gib),
         memory_usage_percent=37.5,
         # -------------------------------------------------
         # DISK
         # -------------------------------------------------
-        disk_total_bytes=512 * gib,
-        disk_used_bytes=256 * gib,
-        disk_free_bytes=256 * gib,
+        disk_total_bytes=(512 * gib),
+        disk_used_bytes=(256 * gib),
+        disk_free_bytes=(256 * gib),
         disk_usage_percent=50.0,
     )
 
@@ -135,12 +183,12 @@ def build_context(
 
 
 # =========================================================
-# DISPLAY
+# OVERVIEW
 # =========================================================
 
 
 @pytest.mark.asyncio
-async def test_system_status_callback_displays_status() -> None:
+async def test_system_status_callback_displays_overview() -> None:
     system_status = Mock()
 
     system_status.get_status.return_value = build_status()
@@ -171,18 +219,137 @@ async def test_system_status_callback_displays_status() -> None:
     keyboard = call.kwargs["reply_markup"]
 
     # -----------------------------------------------------
-    # GENERAL
+    # OVERVIEW CONTENT
     # -----------------------------------------------------
 
     assert "وضعیت سیستم" in text
 
     assert "سیستم در وضعیت عادی قرار دارد" in text
 
+    assert "زمان اجرا" in text
+
+    assert "2 ساعت" in text
+
+    assert "18 دقیقه" in text
+
+    assert "پروژه‌ها" in text
+
+    assert "2 فعال از 3 پروژه" in text
+
+    assert "آخرین بکاپ" in text
+
+    assert "DRD Shop" in text
+
+    assert "موفق" in text
+
     # -----------------------------------------------------
-    # SERVICES
+    # DETAIL CONTENT MUST NOT BE HERE
     # -----------------------------------------------------
 
-    assert "سرویس‌ها" in text
+    assert "حافظه" not in text
+
+    assert "پردازنده" not in text
+
+    assert "فضای ذخیره‌سازی" not in text
+
+    assert "اطلاعات سیستم" not in text
+
+    # -----------------------------------------------------
+    # KEYBOARD
+    # -----------------------------------------------------
+
+    callbacks = [
+        button.callback_data
+        for row in keyboard.inline_keyboard
+        for button in row
+        if (button.callback_data is not None)
+    ]
+
+    assert SYSTEM_STATUS_SERVICES_CALLBACK in callbacks
+
+    assert SYSTEM_STATUS_RESOURCES_CALLBACK in callbacks
+
+    assert SYSTEM_STATUS_BACKUP_CALLBACK in callbacks
+
+    assert SYSTEM_STATUS_PROJECTS_CALLBACK in callbacks
+
+    assert SYSTEM_STATUS_SYSTEM_CALLBACK in callbacks
+
+    assert SYSTEM_STATUS_REFRESH_CALLBACK in callbacks
+
+    assert "main:menu" in callbacks
+
+
+# =========================================================
+# OVERVIEW NAVIGATION
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_system_status_overview_callback_displays_dashboard() -> None:
+    system_status = Mock()
+
+    system_status.get_status.return_value = build_status()
+
+    callback = build_callback(
+        data=SYSTEM_STATUS_OVERVIEW_CALLBACK,
+    )
+
+    context = build_context(
+        system_status=system_status,
+    )
+
+    await system_status_overview_callback(
+        callback,
+        context,
+    )
+
+    system_status.get_status.assert_called_once_with()
+
+    callback.answer.assert_awaited_once_with()
+
+    callback.message.edit_text.assert_awaited_once()
+
+    text = callback.message.edit_text.await_args.args[0]
+
+    assert "وضعیت سیستم" in text
+
+    assert "آخرین بکاپ" in text
+
+
+# =========================================================
+# SERVICES
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_system_status_services_callback_displays_services() -> None:
+    system_status = Mock()
+
+    system_status.get_status.return_value = build_status()
+
+    callback = build_callback(
+        data=SYSTEM_STATUS_SERVICES_CALLBACK,
+    )
+
+    context = build_context(
+        system_status=system_status,
+    )
+
+    await system_status_services_callback(
+        callback,
+        context,
+    )
+
+    system_status.get_status.assert_called_once_with()
+
+    callback.answer.assert_awaited_once_with()
+
+    callback.message.edit_text.assert_awaited_once()
+
+    text = callback.message.edit_text.await_args.args[0]
+
+    assert "وضعیت سرویس‌ها" in text
 
     assert "ربات" in text
 
@@ -192,25 +359,42 @@ async def test_system_status_callback_displays_status() -> None:
 
     assert "دیتابیس" in text
 
-    assert "در دسترس نیست" not in text
-
     assert "پروکسی" in text
 
     assert "نگهداری بکاپ" in text
 
-    # -----------------------------------------------------
-    # UPTIME
-    # -----------------------------------------------------
 
-    assert "زمان اجرا" in text
+# =========================================================
+# RESOURCES
+# =========================================================
 
-    assert "2 ساعت" in text
 
-    assert "18 دقیقه" in text
+@pytest.mark.asyncio
+async def test_system_status_resources_callback_displays_resources() -> None:
+    system_status = Mock()
 
-    # -----------------------------------------------------
-    # RESOURCES
-    # -----------------------------------------------------
+    system_status.get_status.return_value = build_status()
+
+    callback = build_callback(
+        data=SYSTEM_STATUS_RESOURCES_CALLBACK,
+    )
+
+    context = build_context(
+        system_status=system_status,
+    )
+
+    await system_status_resources_callback(
+        callback,
+        context,
+    )
+
+    system_status.get_status.assert_called_once_with()
+
+    callback.answer.assert_awaited_once_with()
+
+    callback.message.edit_text.assert_awaited_once()
+
+    text = callback.message.edit_text.await_args.args[0]
 
     assert "منابع سیستم" in text
 
@@ -226,17 +410,156 @@ async def test_system_status_callback_displays_status() -> None:
 
     assert "50.0%" in text
 
-    # -----------------------------------------------------
-    # PROJECTS
-    # -----------------------------------------------------
 
-    assert "پروژه‌ها" in text
+# =========================================================
+# BACKUP
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_system_status_backup_callback_displays_latest_backup() -> None:
+    system_status = Mock()
+
+    system_status.get_status.return_value = build_status()
+
+    callback = build_callback(
+        data=SYSTEM_STATUS_BACKUP_CALLBACK,
+    )
+
+    context = build_context(
+        system_status=system_status,
+    )
+
+    await system_status_backup_callback(
+        callback,
+        context,
+    )
+
+    system_status.get_status.assert_called_once_with()
+
+    callback.answer.assert_awaited_once_with()
+
+    callback.message.edit_text.assert_awaited_once()
+
+    text = callback.message.edit_text.await_args.args[0]
+
+    assert "آخرین بکاپ" in text
+
+    assert "موفق" in text
+
+    assert "DRD Shop" in text
+
+    assert "حجم آرشیو" in text
+
+
+@pytest.mark.asyncio
+async def test_system_status_backup_callback_handles_empty_history() -> None:
+    system_status = Mock()
+
+    system_status.get_status.return_value = build_status(
+        with_backup=False,
+    )
+
+    callback = build_callback(
+        data=SYSTEM_STATUS_BACKUP_CALLBACK,
+    )
+
+    context = build_context(
+        system_status=system_status,
+    )
+
+    await system_status_backup_callback(
+        callback,
+        context,
+    )
+
+    system_status.get_status.assert_called_once_with()
+
+    callback.answer.assert_awaited_once_with()
+
+    callback.message.edit_text.assert_awaited_once()
+
+    text = callback.message.edit_text.await_args.args[0]
+
+    assert "آخرین بکاپ" in text
+
+    assert "هنوز هیچ بکاپی ثبت نشده است" in text
+
+
+# =========================================================
+# PROJECTS
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_system_status_projects_callback_displays_projects() -> None:
+    system_status = Mock()
+
+    system_status.get_status.return_value = build_status()
+
+    callback = build_callback(
+        data=SYSTEM_STATUS_PROJECTS_CALLBACK,
+    )
+
+    context = build_context(
+        system_status=system_status,
+    )
+
+    await system_status_projects_callback(
+        callback,
+        context,
+    )
+
+    system_status.get_status.assert_called_once_with()
+
+    callback.answer.assert_awaited_once_with()
+
+    callback.message.edit_text.assert_awaited_once()
+
+    text = callback.message.edit_text.await_args.args[0]
+
+    assert "وضعیت پروژه‌ها" in text
+
+    assert "کل پروژه‌ها" in text
+
+    assert "پروژه‌های فعال" in text
+
+    assert "زمان‌بندی فعال" in text
 
     assert "ادمین‌ها" in text
 
-    # -----------------------------------------------------
-    # SYSTEM INFORMATION
-    # -----------------------------------------------------
+
+# =========================================================
+# SYSTEM INFORMATION
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_system_status_information_callback_displays_system_info() -> None:
+    system_status = Mock()
+
+    system_status.get_status.return_value = build_status()
+
+    callback = build_callback(
+        data=SYSTEM_STATUS_SYSTEM_CALLBACK,
+    )
+
+    context = build_context(
+        system_status=system_status,
+    )
+
+    await system_status_information_callback(
+        callback,
+        context,
+    )
+
+    system_status.get_status.assert_called_once_with()
+
+    callback.answer.assert_awaited_once_with()
+
+    callback.message.edit_text.assert_awaited_once()
+
+    text = callback.message.edit_text.await_args.args[0]
 
     assert "اطلاعات سیستم" in text
 
@@ -251,21 +574,6 @@ async def test_system_status_callback_displays_status() -> None:
     assert "AMD64" in text
 
     assert "3.13.14" in text
-
-    # -----------------------------------------------------
-    # KEYBOARD
-    # -----------------------------------------------------
-
-    callbacks = [
-        button.callback_data
-        for row in keyboard.inline_keyboard
-        for button in row
-        if button.callback_data is not None
-    ]
-
-    assert SYSTEM_STATUS_REFRESH_CALLBACK in callbacks
-
-    assert "main:menu" in callbacks
 
 
 # =========================================================
@@ -298,6 +606,10 @@ async def test_system_status_refresh_callback_reloads_status() -> None:
 
     callback.message.edit_text.assert_awaited_once()
 
+    text = callback.message.edit_text.await_args.args[0]
+
+    assert "وضعیت سیستم" in text
+
 
 # =========================================================
 # ERROR HANDLING
@@ -311,6 +623,7 @@ async def test_system_status_refresh_callback_reloads_status() -> None:
         SettingsPersistenceError("settings unavailable"),
         ProjectPersistenceError("projects unavailable"),
         AdminPersistenceError("admins unavailable"),
+        BackupHistoryPersistenceError("backup history unavailable"),
     ],
 )
 async def test_system_status_handles_persistence_errors(

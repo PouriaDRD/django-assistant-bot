@@ -12,10 +12,14 @@ from django_assistant_bot.schemas.admin import (
 from django_assistant_bot.schemas.app_settings import (
     AppSettingsSchema,
 )
+from django_assistant_bot.schemas.backup import (
+    BackupHistorySchema,
+)
 from django_assistant_bot.schemas.project import (
     ProjectSchema,
 )
 from django_assistant_bot.schemas.system_status import (
+    LatestBackupStatusSchema,
     SchedulerRuntimeStatus,
     SystemStatusSchema,
 )
@@ -94,6 +98,17 @@ class DatabaseHealthReader(Protocol):
     ) -> bool: ...
 
 
+class BackupHistoryReader(Protocol):
+    """
+    Minimal backup-history contract required by
+    system status.
+    """
+
+    def get_latest(
+        self,
+    ) -> BackupHistorySchema | None: ...
+
+
 # =========================================================
 # SERVICE
 # =========================================================
@@ -104,7 +119,7 @@ class SystemStatusService:
     Build an application-wide runtime status snapshot.
 
     The service exposes application state together with host
-    operating-system and resource information.
+    operating-system, backup and resource information.
 
     It remains independent from Telegram.
     """
@@ -118,6 +133,7 @@ class SystemStatusService:
         scheduler: SchedulerReader,
         runtime: RuntimeReader,
         database_health: DatabaseHealthReader,
+        backup_history: BackupHistoryReader,
     ) -> None:
         self._settings = settings
 
@@ -130,6 +146,8 @@ class SystemStatusService:
         self._runtime = runtime
 
         self._database_health = database_health
+
+        self._backup_history = backup_history
 
     def get_status(
         self,
@@ -144,11 +162,15 @@ class SystemStatusService:
 
         admins = self._admins.list_admins()
 
+        latest_backup = self._backup_history.get_latest()
+
         enabled_project_count = sum(1 for project in projects if project.enabled)
 
         scheduled_project_count = sum(
             1 for project in projects if (project.enabled and project.schedule.enabled)
         )
+
+        project_names = {project.id: project.name for project in projects}
 
         memory = psutil.virtual_memory()
 
@@ -176,6 +198,15 @@ class SystemStatusService:
             database_healthy=(self._database_health.is_healthy()),
             scheduler_status=(self._get_scheduler_status()),
             uptime_seconds=(self._runtime.get_uptime_seconds()),
+            # ---------------------------------------------
+            # BACKUP
+            # ---------------------------------------------
+            latest_backup=(
+                self._build_latest_backup(
+                    latest_backup,
+                    project_names=project_names,
+                )
+            ),
             # ---------------------------------------------
             # PROJECTS
             # ---------------------------------------------
@@ -232,6 +263,36 @@ class SystemStatusService:
         return SchedulerRuntimeStatus.RUNNING
 
     @staticmethod
+    def _build_latest_backup(
+        history: BackupHistorySchema | None,
+        *,
+        project_names: dict[str, str],
+    ) -> LatestBackupStatusSchema | None:
+        """
+        Convert latest backup history into a compact
+        system-status representation.
+        """
+
+        if history is None:
+            return None
+
+        project_name = project_names.get(
+            history.project_id,
+            history.project_id,
+        )
+
+        return LatestBackupStatusSchema(
+            history_id=history.id,
+            project_id=history.project_id,
+            project_name=project_name,
+            status=history.status,
+            archive_size_bytes=(history.archive_size_bytes),
+            started_at=(history.started_at),
+            finished_at=(history.finished_at),
+            error_message=(history.error_message),
+        )
+
+    @staticmethod
     def _get_os_version() -> str:
         """
         Return a human-readable host operating-system version.
@@ -250,9 +311,6 @@ class SystemStatusService:
     def _get_disk_root() -> str:
         """
         Return filesystem root containing the application.
-
-        This keeps disk statistics relevant to the volume
-        where the application is actually running.
         """
 
         path = Path.cwd().resolve()

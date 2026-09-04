@@ -12,6 +12,9 @@ import pytest
 from django_assistant_bot.database.models.enums import (
     BackupStatus,
 )
+from django_assistant_bot.repositories.exceptions import (
+    PersistenceError,
+)
 from django_assistant_bot.schemas.backup import (
     BackupHistorySchema,
 )
@@ -20,8 +23,13 @@ from django_assistant_bot.services.backup.history import (
 )
 from django_assistant_bot.services.backup.history_exceptions import (
     BackupHistoryNotFoundError,
+    BackupHistoryPersistenceError,
     BackupHistoryValidationError,
 )
+
+# =========================================================
+# BUILDERS
+# =========================================================
 
 
 def build_history(
@@ -48,6 +56,11 @@ def build_history(
         started_at=now,
         finished_at=now,
     )
+
+
+# =========================================================
+# LIST
+# =========================================================
 
 
 def test_list_for_project() -> None:
@@ -78,6 +91,11 @@ def test_list_for_project() -> None:
         limit=10,
         offset=0,
     )
+
+
+# =========================================================
+# GET
+# =========================================================
 
 
 def test_get_history() -> None:
@@ -135,6 +153,65 @@ def test_unknown_history_fails() -> None:
         service.get_history(
             "unknown",
         )
+
+
+# =========================================================
+# GET LATEST
+# =========================================================
+
+
+def test_get_latest_returns_latest_history() -> None:
+    repository = Mock()
+
+    history = build_history()
+
+    repository.get_latest.return_value = history
+
+    service = BackupHistoryService(
+        repository,
+    )
+
+    result = service.get_latest()
+
+    assert result == history
+
+    repository.get_latest.assert_called_once_with()
+
+
+def test_get_latest_returns_none_when_history_is_empty() -> None:
+    repository = Mock()
+
+    repository.get_latest.return_value = None
+
+    service = BackupHistoryService(
+        repository,
+    )
+
+    result = service.get_latest()
+
+    assert result is None
+
+    repository.get_latest.assert_called_once_with()
+
+
+def test_get_latest_converts_persistence_error() -> None:
+    repository = Mock()
+
+    repository.get_latest.side_effect = PersistenceError("database unavailable")
+
+    service = BackupHistoryService(
+        repository,
+    )
+
+    with pytest.raises(
+        BackupHistoryPersistenceError,
+    ):
+        service.get_latest()
+
+
+# =========================================================
+# VALIDATION
+# =========================================================
 
 
 @pytest.mark.parametrize(

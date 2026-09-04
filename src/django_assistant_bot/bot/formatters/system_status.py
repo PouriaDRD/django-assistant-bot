@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from django_assistant_bot.database.models.enums import (
+    BackupStatus,
+)
 from django_assistant_bot.schemas.system_status import (
+    LatestBackupStatusSchema,
     SchedulerRuntimeStatus,
     SystemStatusSchema,
 )
@@ -32,7 +36,7 @@ def _code(
     Format isolated left-to-right code value.
     """
 
-    return f"<code>{_ltr(value)}</code>"
+    return f"<code>" f"{_ltr(value)}" f"</code>"
 
 
 # =========================================================
@@ -44,7 +48,7 @@ def _status_icon(
     enabled: bool,
 ) -> str:
     """
-    Return status indicator icon.
+    Return boolean status indicator.
     """
 
     return "🟢" if enabled else "🔴"
@@ -54,7 +58,7 @@ def _scheduler_icon(
     status: SchedulerRuntimeStatus,
 ) -> str:
     """
-    Return scheduler status indicator.
+    Return scheduler runtime indicator.
     """
 
     if status == SchedulerRuntimeStatus.RUNNING:
@@ -70,7 +74,7 @@ def _scheduler_text(
     status: SchedulerRuntimeStatus,
 ) -> str:
     """
-    Return Persian scheduler status label.
+    Return Persian scheduler runtime label.
     """
 
     if status == SchedulerRuntimeStatus.RUNNING:
@@ -80,16 +84,6 @@ def _scheduler_text(
         return "در حالت مکث"
 
     return "متوقف"
-
-
-def _database_text(
-    healthy: bool,
-) -> str:
-    """
-    Return Persian database health label.
-    """
-
-    return "در دسترس" if healthy else "در دسترس نیست"
 
 
 def _overall_status(
@@ -138,7 +132,7 @@ def _percentage(
     value: float,
 ) -> str:
     """
-    Format percentage value.
+    Format percentage.
     """
 
     return f"{value:.1f}%"
@@ -148,7 +142,7 @@ def _format_bytes(
     value: int,
 ) -> str:
     """
-    Format bytes using the most appropriate unit.
+    Format bytes using an appropriate unit.
     """
 
     if value <= 0:
@@ -194,7 +188,7 @@ def _format_uptime(
     seconds: float,
 ) -> str:
     """
-    Format uptime as a compact Persian duration.
+    Format application uptime as compact Persian duration.
     """
 
     total_seconds = max(
@@ -285,15 +279,104 @@ def _os_version(
 
 
 # =========================================================
-# SECTIONS
+# BACKUP
 # =========================================================
 
 
-def _format_services(
+def _backup_status(
+    backup: LatestBackupStatusSchema,
+) -> tuple[str, str]:
+    """
+    Return latest backup visual status.
+    """
+
+    if backup.status == BackupStatus.SUCCESS:
+        return (
+            "🟢",
+            "موفق",
+        )
+
+    return (
+        "🔴",
+        "ناموفق",
+    )
+
+
+def _format_backup_time(
+    backup: LatestBackupStatusSchema,
+) -> str:
+    """
+    Format latest backup start timestamp.
+    """
+
+    return backup.started_at.strftime("%Y-%m-%d %H:%M")
+
+
+# =========================================================
+# OVERVIEW
+# =========================================================
+
+
+def format_system_status(
     status: SystemStatusSchema,
 ) -> str:
     """
-    Format application services section.
+    Format compact system-status dashboard.
+    """
+
+    overall_icon, overall_text = _overall_status(status)
+
+    if status.project_count:
+        project_summary = (
+            f"{status.enabled_project_count} فعال " f"از {status.project_count} پروژه"
+        )
+    else:
+        project_summary = "پروژه‌ای ثبت نشده است"
+
+    if status.latest_backup is None:
+        backup_summary = "هنوز بکاپی ثبت نشده است"
+
+    else:
+        backup_icon, backup_text = _backup_status(status.latest_backup)
+
+        backup_summary = (
+            f"{backup_icon} " f"{backup_text} — " f"{status.latest_backup.project_name}"
+        )
+
+    return (
+        "🤖 <b>وضعیت سیستم</b>\n"
+        "\n"
+        f"{overall_icon} "
+        f"{overall_text}\n"
+        "\n"
+        "\n"
+        "⏱ <b>زمان اجرا</b>\n"
+        f"{_format_uptime(status.uptime_seconds)}\n"
+        "\n"
+        "\n"
+        "📦 <b>پروژه‌ها</b>\n"
+        f"{project_summary}\n"
+        "\n"
+        "\n"
+        "🗃 <b>آخرین بکاپ</b>\n"
+        f"{backup_summary}\n"
+        "\n"
+        "\n"
+        "برای مشاهده جزئیات، "
+        "یکی از بخش‌های زیر را انتخاب کنید."
+    )
+
+
+# =========================================================
+# SERVICES PAGE
+# =========================================================
+
+
+def format_system_services(
+    status: SystemStatusSchema,
+) -> str:
+    """
+    Format application services page.
     """
 
     scheduler_suffix = ""
@@ -304,114 +387,170 @@ def _format_services(
     elif status.scheduler_status == SchedulerRuntimeStatus.STOPPED:
         scheduler_suffix = " — متوقف"
 
-    database_suffix = "" if status.database_healthy else " — در دسترس نیست"
-
     bot_suffix = "" if status.bot_enabled else " — غیرفعال"
 
     backup_suffix = "" if status.backup_enabled else " — غیرفعال"
 
+    database_suffix = "" if status.database_healthy else " — در دسترس نیست"
+
     retention_suffix = "" if status.retention_enabled else " — غیرفعال"
 
     return (
-        "⚙️ <b>سرویس‌ها</b>\n"
+        "⚙️ <b>وضعیت سرویس‌ها</b>\n"
         "\n"
         f"{_status_icon(status.bot_enabled)} "
         f"ربات{bot_suffix}\n"
+        "\n"
         f"{_status_icon(status.backup_enabled)} "
         f"سیستم بکاپ{backup_suffix}\n"
+        "\n"
         f"{_scheduler_icon(status.scheduler_status)} "
         f"زمان‌بندی{scheduler_suffix}\n"
+        "\n"
         f"{_status_icon(status.database_healthy)} "
         f"دیتابیس{database_suffix}\n"
+        "\n"
         f"{_status_icon(status.proxy_enabled)} "
-        "پروکسی\n"
+        "پروکسی"
+        f"{'' if status.proxy_enabled else ' — غیرفعال'}\n"
+        "\n"
         f"{_status_icon(status.retention_enabled)} "
         f"نگهداری بکاپ{retention_suffix}"
     )
 
 
-def _format_runtime(
+# =========================================================
+# RESOURCES PAGE
+# =========================================================
+
+
+def format_system_resources(
     status: SystemStatusSchema,
 ) -> str:
     """
-    Format application runtime information.
-    """
-
-    return "⏱ <b>زمان اجرا</b>\n" "\n" f"{_format_uptime(status.uptime_seconds)}"
-
-
-def _format_memory(
-    status: SystemStatusSchema,
-) -> str:
-    """
-    Format system memory information.
+    Format host resource usage page.
     """
 
     return (
+        "📊 <b>منابع سیستم</b>\n"
+        "\n"
+        "\n"
         "🧩 <b>حافظه</b>\n"
         "\n"
-        f"استفاده: {_code(_percentage(status.memory_usage_percent))}\n"
-        f"مصرف‌شده: {_code(_format_bytes(status.memory_used_bytes))}\n"
-        f"کل: {_code(_format_bytes(status.memory_total_bytes))}\n"
-        f"آزاد: {_code(_format_bytes(status.memory_available_bytes))}"
-    )
-
-
-def _format_cpu(
-    status: SystemStatusSchema,
-) -> str:
-    """
-    Format processor information.
-    """
-
-    return (
+        f"استفاده: "
+        f"{_code(_percentage(status.memory_usage_percent))}\n"
+        f"مصرف‌شده: "
+        f"{_code(_format_bytes(status.memory_used_bytes))}\n"
+        f"کل: "
+        f"{_code(_format_bytes(status.memory_total_bytes))}\n"
+        f"آزاد: "
+        f"{_code(_format_bytes(status.memory_available_bytes))}\n"
+        "\n"
+        "\n"
         "⚙️ <b>پردازنده</b>\n"
         "\n"
-        f"استفاده: {_code(_percentage(status.cpu_usage_percent))}\n"
-        f"هسته فیزیکی: {_code(_physical_cores(status.cpu_physical_cores))}\n"
-        f"هسته منطقی: {_code(str(status.cpu_logical_cores))}"
-    )
-
-
-def _format_disk(
-    status: SystemStatusSchema,
-) -> str:
-    """
-    Format disk usage information.
-    """
-
-    return (
+        f"استفاده: "
+        f"{_code(_percentage(status.cpu_usage_percent))}\n"
+        f"هسته فیزیکی: "
+        f"{_code(_physical_cores(status.cpu_physical_cores))}\n"
+        f"هسته منطقی: "
+        f"{_code(str(status.cpu_logical_cores))}\n"
+        "\n"
+        "\n"
         "💽 <b>فضای ذخیره‌سازی</b>\n"
         "\n"
-        f"استفاده: {_code(_percentage(status.disk_usage_percent))}\n"
-        f"مصرف‌شده: {_code(_format_bytes(status.disk_used_bytes))}\n"
-        f"کل: {_code(_format_bytes(status.disk_total_bytes))}\n"
-        f"آزاد: {_code(_format_bytes(status.disk_free_bytes))}"
+        f"استفاده: "
+        f"{_code(_percentage(status.disk_usage_percent))}\n"
+        f"مصرف‌شده: "
+        f"{_code(_format_bytes(status.disk_used_bytes))}\n"
+        f"کل: "
+        f"{_code(_format_bytes(status.disk_total_bytes))}\n"
+        f"آزاد: "
+        f"{_code(_format_bytes(status.disk_free_bytes))}"
     )
 
 
-def _format_projects(
+# =========================================================
+# BACKUP PAGE
+# =========================================================
+
+
+def format_system_backup(
     status: SystemStatusSchema,
 ) -> str:
     """
-    Format project statistics.
+    Format latest backup status page.
+    """
+
+    backup = status.latest_backup
+
+    if backup is None:
+        return "🗃 <b>آخرین بکاپ</b>\n" "\n" "هنوز هیچ بکاپی ثبت نشده است."
+
+    icon, label = _backup_status(backup)
+
+    text = (
+        "🗃 <b>آخرین بکاپ</b>\n"
+        "\n"
+        f"{icon} <b>{label}</b>\n"
+        "\n"
+        "پروژه\n"
+        f"<b>{backup.project_name}</b>\n"
+        "\n"
+        "زمان اجرا\n"
+        f"{_code(_format_backup_time(backup))}\n"
+    )
+
+    if backup.status == BackupStatus.SUCCESS:
+        text += "\n" "حجم آرشیو\n" f"{_code(_format_bytes(backup.archive_size_bytes))}"
+
+        return text
+
+    if backup.error_message:
+        text += "\n" "\n" "خطا\n" f"<code>{backup.error_message}</code>"
+
+    return text
+
+
+# =========================================================
+# PROJECTS PAGE
+# =========================================================
+
+
+def format_system_projects(
+    status: SystemStatusSchema,
+) -> str:
+    """
+    Format project statistics page.
     """
 
     return (
-        "📦 <b>پروژه‌ها</b>\n"
+        "📦 <b>وضعیت پروژه‌ها</b>\n"
         "\n"
-        f"کل: <b>{status.project_count}</b>\n"
-        f"فعال: <b>{status.enabled_project_count}</b>\n"
-        f"زمان‌بندی فعال: <b>{status.scheduled_project_count}</b>\n"
-        f"ادمین‌ها: <b>{status.admin_count}</b>"
+        f"کل پروژه‌ها: "
+        f"<b>{status.project_count}</b>\n"
+        "\n"
+        f"پروژه‌های فعال: "
+        f"<b>{status.enabled_project_count}</b>\n"
+        "\n"
+        f"زمان‌بندی فعال: "
+        f"<b>{status.scheduled_project_count}</b>\n"
+        "\n"
+        f"ادمین‌ها: "
+        f"<b>{status.admin_count}</b>"
     )
 
 
-def _format_system(
+# =========================================================
+# SYSTEM PAGE
+# =========================================================
+
+
+def format_system_information(
     status: SystemStatusSchema,
 ) -> str:
     """
-    Format operating-system runtime information.
+    Format operating-system information page.
     """
 
     return (
@@ -427,52 +566,18 @@ def _format_system(
         f"{_code(status.architecture)}\n"
         "\n"
         "نسخه Python\n"
-        f"{_code(status.python_version)}"
-    )
-
-
-# =========================================================
-# MAIN
-# =========================================================
-
-
-def format_system_status(
-    status: SystemStatusSchema,
-) -> str:
-    """
-    Format application status as a clean Telegram dashboard.
-    """
-
-    overall_icon, overall_text = _overall_status(status)
-
-    return (
-        "🤖 <b>وضعیت سیستم</b>\n"
+        f"{_code(status.python_version)}\n"
         "\n"
-        f"{overall_icon} {overall_text}\n"
-        "\n"
-        "\n"
-        f"{_format_services(status)}\n"
-        "\n"
-        "\n"
-        f"{_format_runtime(status)}\n"
-        "\n"
-        "\n"
-        "📊 <b>منابع سیستم</b>\n"
-        "\n"
-        f"{_format_memory(status)}\n"
-        "\n"
-        f"{_format_cpu(status)}\n"
-        "\n"
-        f"{_format_disk(status)}\n"
-        "\n"
-        "\n"
-        f"{_format_projects(status)}\n"
-        "\n"
-        "\n"
-        f"{_format_system(status)}"
+        "زمان اجرای برنامه\n"
+        f"{_format_uptime(status.uptime_seconds)}"
     )
 
 
 __all__ = [
+    "format_system_backup",
+    "format_system_information",
+    "format_system_projects",
+    "format_system_resources",
+    "format_system_services",
     "format_system_status",
 ]

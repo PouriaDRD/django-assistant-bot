@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import (
+    datetime,
+    timezone,
+)
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
 from django_assistant_bot.database.models.enums import (
+    BackupStatus,
     DatabaseType,
     ScheduleUnit,
 )
@@ -15,6 +19,9 @@ from django_assistant_bot.schemas.admin import (
 )
 from django_assistant_bot.schemas.app_settings import (
     AppSettingsSchema,
+)
+from django_assistant_bot.schemas.backup import (
+    BackupHistorySchema,
 )
 from django_assistant_bot.schemas.project import (
     DatabaseSchema,
@@ -41,10 +48,6 @@ def build_settings(
     proxy_enabled: bool = False,
     retention_enabled: bool = True,
 ) -> AppSettingsSchema:
-    """
-    Build application settings for system status tests.
-    """
-
     return AppSettingsSchema(
         bot_enabled=bot_enabled,
         backup_enabled=backup_enabled,
@@ -60,12 +63,10 @@ def build_settings(
 def build_admin(
     telegram_user_id: int,
 ) -> AdminSchema:
-    """
-    Build administrator schema for tests.
-    """
-
     return AdminSchema(
-        created_at=datetime.now(),
+        created_at=datetime.now(
+            timezone.utc,
+        ),
         telegram_user_id=(telegram_user_id),
     )
 
@@ -73,16 +74,13 @@ def build_admin(
 def build_project(
     *,
     project_id: str,
+    name: str | None = None,
     enabled: bool = True,
     schedule_enabled: bool = True,
 ) -> ProjectSchema:
-    """
-    Build project schema for system status tests.
-    """
-
     return ProjectSchema(
         id=project_id,
-        name=(f"Project {project_id}"),
+        name=(name or f"Project {project_id}"),
         enabled=enabled,
         database=DatabaseSchema(
             type=DatabaseType.SQLITE,
@@ -100,14 +98,35 @@ def build_project(
     )
 
 
+def build_history(
+    *,
+    project_id: str = "1",
+) -> BackupHistorySchema:
+    now = datetime.now(
+        timezone.utc,
+    )
+
+    return BackupHistorySchema(
+        id="history-1",
+        project_id=project_id,
+        status=BackupStatus.SUCCESS,
+        archive_path=Path("C:/backups/latest.zip"),
+        database_size_bytes=100,
+        media_size_bytes=200,
+        archive_size_bytes=300,
+        media_file_count=5,
+        checksum_algorithm="sha256",
+        checksum_value="checksum",
+        error_message=None,
+        started_at=now,
+        finished_at=now,
+    )
+
+
 def build_runtime(
     *,
     uptime_seconds: float = 3600.0,
 ) -> Mock:
-    """
-    Build application runtime mock.
-    """
-
     runtime = Mock()
 
     runtime.get_uptime_seconds.return_value = uptime_seconds
@@ -119,15 +138,22 @@ def build_database_health(
     *,
     healthy: bool = True,
 ) -> Mock:
-    """
-    Build database health mock.
-    """
-
     database_health = Mock()
 
     database_health.is_healthy.return_value = healthy
 
     return database_health
+
+
+def build_backup_history(
+    *,
+    history: BackupHistorySchema | None = None,
+) -> Mock:
+    backup_history = Mock()
+
+    backup_history.get_latest.return_value = history
+
+    return backup_history
 
 
 def build_service(
@@ -138,11 +164,8 @@ def build_service(
     scheduler: Mock,
     runtime: Mock | None = None,
     database_health: Mock | None = None,
+    backup_history: Mock | None = None,
 ) -> SystemStatusService:
-    """
-    Build system status service with mocked dependencies.
-    """
-
     return SystemStatusService(
         settings=settings,
         projects=projects,
@@ -150,6 +173,7 @@ def build_service(
         scheduler=scheduler,
         runtime=(runtime or build_runtime()),
         database_health=(database_health or build_database_health()),
+        backup_history=(backup_history or build_backup_history()),
     )
 
 
@@ -161,18 +185,14 @@ def build_service(
 def test_get_status_returns_runtime_snapshot() -> None:
     settings = Mock()
 
-    settings.get_settings.return_value = build_settings(
-        bot_enabled=True,
-        backup_enabled=True,
-        proxy_enabled=False,
-        retention_enabled=True,
-    )
+    settings.get_settings.return_value = build_settings()
 
     projects = Mock()
 
     projects.list_projects.return_value = [
         build_project(
             project_id="1",
+            name="DRD Shop",
             enabled=True,
             schedule_enabled=True,
         ),
@@ -213,6 +233,14 @@ def test_get_status_returns_runtime_snapshot() -> None:
         healthy=True,
     )
 
+    history = build_history(
+        project_id="1",
+    )
+
+    backup_history = build_backup_history(
+        history=history,
+    )
+
     service = build_service(
         settings=settings,
         projects=projects,
@@ -220,17 +248,12 @@ def test_get_status_returns_runtime_snapshot() -> None:
         scheduler=scheduler,
         runtime=runtime,
         database_health=database_health,
+        backup_history=backup_history,
     )
 
     result = service.get_status()
 
     assert result.bot_enabled is True
-
-    assert result.backup_enabled is True
-
-    assert result.proxy_enabled is False
-
-    assert result.retention_enabled is True
 
     assert result.database_healthy is True
 
@@ -246,17 +269,110 @@ def test_get_status_returns_runtime_snapshot() -> None:
 
     assert result.admin_count == 2
 
-    assert result.python_version
+    assert result.latest_backup is not None
 
-    assert result.operating_system
+    assert result.latest_backup.history_id == history.id
+
+    assert result.latest_backup.project_id == "1"
+
+    assert result.latest_backup.project_name == "DRD Shop"
+
+    assert result.latest_backup.status is BackupStatus.SUCCESS
+
+    assert result.latest_backup.archive_size_bytes == 300
 
     runtime.get_uptime_seconds.assert_called_once_with()
 
     database_health.is_healthy.assert_called_once_with()
 
+    backup_history.get_latest.assert_called_once_with()
+
 
 # =========================================================
-# SCHEDULER STATUS
+# LATEST BACKUP
+# =========================================================
+
+
+def test_latest_backup_is_none_when_history_is_empty() -> None:
+    settings = Mock()
+
+    settings.get_settings.return_value = build_settings()
+
+    projects = Mock()
+
+    projects.list_projects.return_value = []
+
+    admins = Mock()
+
+    admins.list_admins.return_value = []
+
+    scheduler = Mock()
+
+    scheduler.is_started = True
+
+    scheduler.is_paused = False
+
+    backup_history = build_backup_history(
+        history=None,
+    )
+
+    service = build_service(
+        settings=settings,
+        projects=projects,
+        admins=admins,
+        scheduler=scheduler,
+        backup_history=backup_history,
+    )
+
+    result = service.get_status()
+
+    assert result.latest_backup is None
+
+
+def test_latest_backup_uses_project_id_when_project_is_missing() -> None:
+    settings = Mock()
+
+    settings.get_settings.return_value = build_settings()
+
+    projects = Mock()
+
+    projects.list_projects.return_value = []
+
+    admins = Mock()
+
+    admins.list_admins.return_value = []
+
+    scheduler = Mock()
+
+    scheduler.is_started = True
+
+    scheduler.is_paused = False
+
+    history = build_history(
+        project_id="missing-project",
+    )
+
+    backup_history = build_backup_history(
+        history=history,
+    )
+
+    service = build_service(
+        settings=settings,
+        projects=projects,
+        admins=admins,
+        scheduler=scheduler,
+        backup_history=backup_history,
+    )
+
+    result = service.get_status()
+
+    assert result.latest_backup is not None
+
+    assert result.latest_backup.project_name == "missing-project"
+
+
+# =========================================================
+# SCHEDULER
 # =========================================================
 
 

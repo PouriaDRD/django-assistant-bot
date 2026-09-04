@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+)
+
+from django_assistant_bot.database.models.enums import (
+    BackupStatus,
 )
 
 
@@ -19,6 +24,35 @@ class SchedulerRuntimeStatus(StrEnum):
     PAUSED = "paused"
 
     STOPPED = "stopped"
+
+
+class LatestBackupStatusSchema(BaseModel):
+    """
+    Compact latest-backup snapshot for system status.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
+
+    history_id: str
+
+    project_id: str
+
+    project_name: str
+
+    status: BackupStatus
+
+    archive_size_bytes: int = Field(
+        ge=0,
+    )
+
+    started_at: datetime
+
+    finished_at: datetime | None = None
+
+    error_message: str | None = None
 
 
 class SystemStatusSchema(BaseModel):
@@ -50,6 +84,12 @@ class SystemStatusSchema(BaseModel):
     uptime_seconds: float = Field(
         ge=0,
     )
+
+    # =====================================================
+    # BACKUP
+    # =====================================================
+
+    latest_backup: LatestBackupStatusSchema | None = None
 
     # =====================================================
     # PROJECTS
@@ -145,6 +185,7 @@ class SystemStatusSchema(BaseModel):
 
 
 __all__ = [
+    "LatestBackupStatusSchema",
     "SchedulerRuntimeStatus",
     "SystemStatusSchema",
 ]

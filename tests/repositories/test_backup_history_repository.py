@@ -1,14 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import (
+    datetime,
+    timedelta,
+    timezone,
+)
 from pathlib import Path
 
 from django_assistant_bot.database.models.enums import (
     BackupStatus,
-    ScheduleUnit,
     DatabaseType,
+    ScheduleUnit,
 )
-from django_assistant_bot.database.session import SessionManager
+from django_assistant_bot.database.session import (
+    SessionManager,
+)
 from django_assistant_bot.repositories.backup_history import (
     BackupHistoryRepository,
 )
@@ -24,6 +30,10 @@ from django_assistant_bot.schemas.project import (
     ProjectCreateSchema,
     ScheduleSchema,
 )
+
+# =========================================================
+# HELPERS
+# =========================================================
 
 
 def create_project(
@@ -50,6 +60,11 @@ def create_project(
     )
 
     return project.id
+
+
+# =========================================================
+# CREATE
+# =========================================================
 
 
 def test_create_backup_history(
@@ -90,9 +105,17 @@ def test_create_backup_history(
     assert history.archive_path == Path("/backups/project.zip")
 
     assert history.database_size_bytes == 100
+
     assert history.media_size_bytes == 200
+
     assert history.archive_size_bytes == 250
+
     assert history.media_file_count == 5
+
+
+# =========================================================
+# LIST
+# =========================================================
 
 
 def test_list_backup_history_for_project(
@@ -132,6 +155,11 @@ def test_list_backup_history_for_project(
     )
 
     assert len(histories) == 2
+
+
+# =========================================================
+# GET BY ID
+# =========================================================
 
 
 def test_get_backup_history_by_id(
@@ -194,3 +222,77 @@ def test_get_unknown_backup_history_returns_none(
     )
 
     assert repository.get_by_id("unknown") is None
+
+
+# =========================================================
+# GET LATEST
+# =========================================================
+
+
+def test_get_latest_returns_newest_backup_history(
+    session_manager: SessionManager,
+) -> None:
+    project_id = create_project(
+        session_manager,
+    )
+
+    repository = BackupHistoryRepository(
+        session_manager,
+    )
+
+    now = datetime.now(
+        timezone.utc,
+    )
+
+    older = repository.create(
+        BackupHistoryCreateSchema(
+            project_id=project_id,
+            status=BackupStatus.FAILED,
+            error_message="Older failure",
+            started_at=(
+                now
+                - timedelta(
+                    minutes=10,
+                )
+            ),
+            finished_at=(
+                now
+                - timedelta(
+                    minutes=9,
+                )
+            ),
+        )
+    )
+
+    newest = repository.create(
+        BackupHistoryCreateSchema(
+            project_id=project_id,
+            status=BackupStatus.SUCCESS,
+            archive_path=Path("/backups/latest.zip"),
+            archive_size_bytes=1024,
+            started_at=now,
+            finished_at=now,
+        )
+    )
+
+    result = repository.get_latest()
+
+    assert result is not None
+
+    assert result.id == newest.id
+
+    assert result.id != older.id
+
+    assert result.status is BackupStatus.SUCCESS
+
+
+def test_get_latest_returns_none_when_history_is_empty(
+    session_manager: SessionManager,
+) -> None:
+    repository = BackupHistoryRepository(
+        session_manager,
+    )
+
+    result = repository.get_latest()
+
+    assert result is None

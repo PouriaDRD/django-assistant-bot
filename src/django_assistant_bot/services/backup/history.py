@@ -27,9 +27,9 @@ class BackupHistoryService:
     ) -> None:
         self._repository = repository
 
-    # -----------------------------------------------------
+    # =====================================================
     # LIST
-    # -----------------------------------------------------
+    # =====================================================
 
     def list_for_project(
         self,
@@ -65,9 +65,9 @@ class BackupHistoryService:
                 "Could not load backup history."
             ) from exc
 
-    # -----------------------------------------------------
+    # =====================================================
     # GET
-    # -----------------------------------------------------
+    # =====================================================
 
     def get_history(
         self,
@@ -112,3 +112,25 @@ class BackupHistoryService:
                 )
 
         return history
+
+    def get_latest(
+        self,
+    ) -> BackupHistorySchema | None:
+        """
+        Return the newest backup history record.
+
+        None is returned when no backup has been recorded yet.
+        """
+
+        try:
+            return self._repository.get_latest()
+
+        except PersistenceError as exc:
+            raise BackupHistoryPersistenceError(
+                "Could not load latest backup history."
+            ) from exc
+
+
+__all__ = [
+    "BackupHistoryService",
+]

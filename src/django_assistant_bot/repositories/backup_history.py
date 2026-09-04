@@ -31,14 +31,18 @@ class BackupHistoryRepository:
     ) -> None:
         self._sessions = sessions
 
-    # -----------------------------------------------------
+    # =====================================================
     # CREATE
-    # -----------------------------------------------------
+    # =====================================================
 
     def create(
         self,
         data: BackupHistoryCreateSchema,
     ) -> BackupHistorySchema:
+        """
+        Create and persist a backup history record.
+        """
+
         model = BackupHistoryModel(
             project_id=data.project_id,
             status=data.status,
@@ -73,9 +77,9 @@ class BackupHistoryRepository:
         except SQLAlchemyError as exc:
             raise PersistenceError("Could not create backup history.") from exc
 
-    # -----------------------------------------------------
+    # =====================================================
     # GET
-    # -----------------------------------------------------
+    # =====================================================
 
     def get_by_id(
         self,
@@ -103,9 +107,38 @@ class BackupHistoryRepository:
         except SQLAlchemyError as exc:
             raise PersistenceError("Could not load backup history.") from exc
 
-    # -----------------------------------------------------
+    def get_latest(
+        self,
+    ) -> BackupHistorySchema | None:
+        """
+        Return the newest backup history record.
+
+        Records are ordered by backup start time descending.
+        """
+
+        try:
+            with self._sessions.session() as session:
+                statement = (
+                    select(BackupHistoryModel)
+                    .order_by(BackupHistoryModel.started_at.desc())
+                    .limit(1)
+                )
+
+                model = session.scalars(statement).first()
+
+                if model is None:
+                    return None
+
+                return self._to_schema(
+                    model,
+                )
+
+        except SQLAlchemyError as exc:
+            raise PersistenceError("Could not load latest backup history.") from exc
+
+    # =====================================================
     # LIST
-    # -----------------------------------------------------
+    # =====================================================
 
     def list_for_project(
         self,
@@ -153,14 +186,18 @@ class BackupHistoryRepository:
         except SQLAlchemyError as exc:
             raise PersistenceError("Could not load backup history.") from exc
 
-    # -----------------------------------------------------
+    # =====================================================
     # MAPPING
-    # -----------------------------------------------------
+    # =====================================================
 
     @staticmethod
     def _to_schema(
         model: BackupHistoryModel,
     ) -> BackupHistorySchema:
+        """
+        Convert persistence model into public schema.
+        """
+
         return BackupHistorySchema(
             id=model.id,
             project_id=model.project_id,
@@ -178,3 +215,8 @@ class BackupHistoryRepository:
             started_at=(model.started_at),
             finished_at=(model.finished_at),
         )
+
+
+__all__ = [
+    "BackupHistoryRepository",
+]

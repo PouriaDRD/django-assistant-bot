@@ -180,7 +180,8 @@ def bootstrap_application() -> ApplicationBootstrap:
         admins=admin_service,
         scheduler=backup_scheduler,
         runtime=runtime_service,
-        database_health=(database_health_service),
+        database_health=database_health_service,
+        backup_history=backup_history_service,
     )
 
     # -----------------------------------------------------
