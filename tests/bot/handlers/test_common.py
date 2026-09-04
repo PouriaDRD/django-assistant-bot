@@ -17,8 +17,10 @@ from django_assistant_bot.bot.context import (
     ApplicationContext,
 )
 from django_assistant_bot.bot.handlers.common import (
+    build_help_message,
     build_main_menu_message,
     build_start_message,
+    help_handler,
     main_menu_callback,
     menu_handler,
     start_handler,
@@ -177,6 +179,41 @@ def test_start_message_is_standalone() -> None:
 
 
 # =========================================================
+# HELP MESSAGE
+# =========================================================
+
+
+def test_help_message_contains_public_commands() -> None:
+    text = build_help_message()
+
+    assert "/start" in text
+
+    assert "/menu" in text
+
+    assert "/help" in text
+
+
+def test_help_message_describes_main_features() -> None:
+    text = build_help_message()
+
+    assert "مدیریت پروژه" in text
+
+    assert "تاریخچه" in text
+
+    assert "زمان‌بندی" in text
+
+    assert "نگهداری" in text
+
+    assert "فشرده‌سازی" in text
+
+    assert "ادمین" in text
+
+    assert "پروکسی" in text
+
+    assert "وضعیت سیستم" in text
+
+
+# =========================================================
 # MAIN MENU MESSAGE
 # =========================================================
 
@@ -237,6 +274,28 @@ async def test_start_handler_does_not_show_main_menu() -> None:
     assert "/menu" in text
 
     assert "reply_markup" not in call.kwargs
+
+
+# =========================================================
+# HELP HANDLER
+# =========================================================
+
+
+@pytest.mark.asyncio
+async def test_help_handler_sends_help_message() -> None:
+    message = build_message()
+
+    await help_handler(
+        message,
+    )
+
+    answer = get_answer_mock(
+        message,
+    )
+
+    answer.assert_awaited_once_with(
+        build_help_message(),
+    )
 
 
 # =========================================================

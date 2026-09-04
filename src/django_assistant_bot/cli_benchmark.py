@@ -129,6 +129,39 @@ def format_benchmark(
 
 
 # =========================================================
+# ARCHIVE CLEANUP
+# =========================================================
+
+
+def cleanup_benchmark_archive(
+    archive_path: Path,
+) -> bool:
+    """
+    Remove the temporary archive created by a benchmark.
+
+    Benchmark runs intentionally bypass backup history and
+    retention, therefore keeping their archive would create
+    an orphan file inside the configured backup directory.
+
+    Returns:
+        True:
+            Archive is absent after cleanup.
+
+        False:
+            Cleanup failed due to an operating-system error.
+    """
+
+    try:
+        if archive_path.exists():
+            archive_path.unlink()
+
+    except OSError:
+        return False
+
+    return not archive_path.exists()
+
+
+# =========================================================
 # BACKUP BENCHMARK
 # =========================================================
 
@@ -147,6 +180,10 @@ def benchmark_backup_command(
     - Telegram delivery
 
     Only the core backup pipeline is measured.
+
+    The generated archive is temporary and is removed before
+    the command exits so benchmark runs cannot create orphan
+    backup files.
     """
 
     normalized_project_id = project_id.strip()
@@ -157,8 +194,6 @@ def benchmark_backup_command(
         return EXIT_FAILURE
 
     bootstrap = bootstrap_application()
-
-    archive_path: Path | None = None
 
     try:
         # -------------------------------------------------
@@ -191,7 +226,10 @@ def benchmark_backup_command(
         # -------------------------------------------------
 
         try:
-            backup_result, benchmark = benchmark_backup(
+            (
+                backup_result,
+                benchmark,
+            ) = benchmark_backup(
                 run_backup=(
                     lambda: (
                         backup_service.backup_project(
@@ -218,7 +256,26 @@ def benchmark_backup_command(
 
         print()
 
-        print(("Archive: " f"{archive_path}"))
+        print(("Temporary archive: " f"{archive_path}"))
+
+        # -------------------------------------------------
+        # CLEANUP
+        # -------------------------------------------------
+
+        if not cleanup_benchmark_archive(
+            archive_path,
+        ):
+            print(
+                (
+                    "Warning: benchmark completed, "
+                    "but the temporary archive could "
+                    "not be removed."
+                )
+            )
+
+            return EXIT_FAILURE
+
+        print("Temporary archive cleaned up.")
 
         return EXIT_SUCCESS
 
@@ -235,6 +292,7 @@ __all__ = [
     "EXIT_FAILURE",
     "EXIT_SUCCESS",
     "benchmark_backup_command",
+    "cleanup_benchmark_archive",
     "format_benchmark",
     "format_bytes",
     "format_compression_ratio",

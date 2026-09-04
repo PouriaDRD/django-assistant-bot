@@ -75,7 +75,9 @@ def build_main_menu_message(
 
     backup_status = "🟢 فعال" if settings.backup_enabled else "🔴 غیرفعال"
 
-    project_count = len(projects)
+    project_count = len(
+        projects,
+    )
 
     return (
         "🤖 <b>Django Assistant Bot</b>\n"
@@ -85,6 +87,41 @@ def build_main_menu_message(
         f"تعداد پروژه‌ها: <b>{project_count}</b>\n"
         "\n"
         "یکی از گزینه‌های زیر را انتخاب کنید:"
+    )
+
+
+# =========================================================
+# HELP MESSAGE
+# =========================================================
+
+
+def build_help_message() -> str:
+    """
+    Build the user-facing command and feature guide.
+
+    The help text remains intentionally concise because
+    detailed operations are exposed through the /menu
+    dashboard and its inline keyboards.
+    """
+
+    return (
+        "ℹ️ <b>راهنمای Django Assistant Bot</b>\n"
+        "\n"
+        "<b>دستورات</b>\n"
+        "/start — معرفی ربات\n"
+        "/menu — باز کردن پنل مدیریت\n"
+        "/help — نمایش این راهنما\n"
+        "\n"
+        "<b>امکانات پنل مدیریت</b>\n"
+        "📦 مدیریت پروژه‌های Django\n"
+        "💾 تهیه بکاپ و مشاهده تاریخچه\n"
+        "⏰ مدیریت زمان‌بندی خودکار\n"
+        "⚙️ تنظیمات بکاپ، نگهداری و فشرده‌سازی\n"
+        "👤 مدیریت ادمین‌ها\n"
+        "🌐 تنظیم و تست پروکسی Telegram\n"
+        "🤖 مشاهده وضعیت سیستم و سرویس‌ها\n"
+        "\n"
+        "برای استفاده از امکانات بالا، /menu را باز کنید."
     )
 
 
@@ -146,18 +183,11 @@ async def help_handler(
     message: Message,
 ) -> None:
     """
-    Display the temporary command help.
-
-    A complete project guide will replace this message
-    after all features are finalized.
+    Display the concise application help guide.
     """
 
     await message.answer(
-        "ℹ️ <b>راهنما</b>\n"
-        "\n"
-        "/start — معرفی ربات\n"
-        "/menu — نمایش منوی اصلی\n"
-        "/help — نمایش راهنما"
+        build_help_message(),
     )
 
 
@@ -194,6 +224,7 @@ async def main_menu_callback(
 
 
 __all__ = [
+    "build_help_message",
     "build_main_menu_message",
     "build_start_message",
     "help_handler",
