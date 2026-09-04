@@ -6,6 +6,9 @@ from datetime import (
     timezone,
 )
 from pathlib import Path
+from uuid import (
+    uuid4,
+)
 
 from django_assistant_bot.database.models.enums import (
     BackupStatus,
@@ -109,11 +112,11 @@ class BackupService:
             exist_ok=True,
         )
 
-        timestamp = started_at.strftime(
-            "%Y%m%d_%H%M%S",
+        archive_path = self._build_archive_path(
+            project=project,
+            project_directory=(project_directory),
+            started_at=started_at,
         )
-
-        archive_path = project_directory / (f"{project.id}_" f"{timestamp}.zip")
 
         try:
             with tempfile.TemporaryDirectory(
@@ -182,6 +185,34 @@ class BackupService:
             )
 
             raise
+
+    @staticmethod
+    def _build_archive_path(
+        *,
+        project: ProjectSchema,
+        project_directory: Path,
+        started_at: datetime,
+    ) -> Path:
+        """
+        Build a collision-resistant archive path.
+
+        The timestamp remains human-readable while a short
+        random suffix prevents two backups created during the
+        same second from overwriting one another.
+
+        The suffix also protects against collisions across
+        multiple service instances or application processes.
+        """
+
+        timestamp = started_at.strftime(
+            "%Y%m%d_%H%M%S",
+        )
+
+        unique_suffix = uuid4().hex[:8]
+
+        filename = f"{project.id}_" f"{timestamp}_" f"{unique_suffix}.zip"
+
+        return project_directory / filename
 
     @staticmethod
     def _validate_project(
