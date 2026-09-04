@@ -16,6 +16,9 @@ from django_assistant_bot.services.project import (
 from django_assistant_bot.services.settings import (
     AppSettingsService,
 )
+from django_assistant_bot.services.scheduler import (
+    BackupSchedulerService,
+)
 
 
 def test_application_bootstrap() -> None:
@@ -47,6 +50,11 @@ def test_application_bootstrap() -> None:
         assert isinstance(
             bootstrap.context.backup_history,
             BackupHistoryService,
+        )
+
+        assert isinstance(
+            bootstrap.context.scheduler,
+            BackupSchedulerService,
         )
 
     finally:

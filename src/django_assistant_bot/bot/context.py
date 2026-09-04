@@ -18,6 +18,9 @@ from django_assistant_bot.services.project import (
 from django_assistant_bot.services.settings import (
     AppSettingsService,
 )
+from django_assistant_bot.services.scheduler import (
+    BackupSchedulerService,
+)
 
 
 @dataclass(
@@ -44,3 +47,5 @@ class ApplicationContext:
     backups: BackupCoordinator
 
     backup_history: BackupHistoryService
+
+    scheduler: BackupSchedulerService

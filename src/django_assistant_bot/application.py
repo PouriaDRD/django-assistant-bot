@@ -6,8 +6,14 @@ import logging
 from django_assistant_bot.bot.bot import (
     TelegramBot,
 )
+from django_assistant_bot.bot.delivery import (
+    TelegramBackupDelivery,
+)
 from django_assistant_bot.core.bootstrap import (
     bootstrap_application,
+)
+from django_assistant_bot.services.delivery import (
+    BackupDeliveryService,
 )
 from django_assistant_bot.utils.logger import (
     setup_logging,
@@ -26,21 +32,56 @@ async def run() -> None:
     )
 
     bootstrap = bootstrap_application()
-
     context = bootstrap.context
 
     telegram_bot: TelegramBot | None = None
+
+    scheduler_started = False
 
     try:
         app_settings = context.settings.get_settings()
 
         if not app_settings.bot_enabled:
             logger.warning("Telegram bot is disabled.")
+
             return
+
+        # -------------------------------------------------
+        # TELEGRAM BOT
+        # -------------------------------------------------
 
         telegram_bot = TelegramBot(
             context=context,
         )
+
+        # -------------------------------------------------
+        # DELIVERY
+        # -------------------------------------------------
+
+        telegram_delivery = TelegramBackupDelivery(
+            bot=telegram_bot.bot,
+            admins=context.admins,
+        )
+
+        backup_delivery = BackupDeliveryService(
+            telegram_delivery,
+        )
+
+        context.scheduler.set_delivery(
+            backup_delivery,
+        )
+
+        # -------------------------------------------------
+        # SCHEDULER
+        # -------------------------------------------------
+
+        context.scheduler.start()
+
+        scheduler_started = True
+
+        # -------------------------------------------------
+        # TELEGRAM
+        # -------------------------------------------------
 
         logger.info("Starting Django Assistant Bot...")
 
@@ -53,6 +94,11 @@ async def run() -> None:
 
     finally:
         logger.info("Stopping Django Assistant Bot...")
+
+        if scheduler_started:
+            context.scheduler.stop(
+                wait=False,
+            )
 
         if telegram_bot is not None:
             await telegram_bot.stop()

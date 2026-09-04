@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
 from html import escape
+from datetime import datetime
 
 from django_assistant_bot.database.models.enums import (
     BackupStatus,

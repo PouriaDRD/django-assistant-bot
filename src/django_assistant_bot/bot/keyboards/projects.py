@@ -212,6 +212,22 @@ def schedule_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
+                    text="1 دقیقه",
+                    callback_data=("project:schedule:" "1:minutes"),
+                ),
+                InlineKeyboardButton(
+                    text="2 دقیقه",
+                    callback_data=("project:schedule:" "2:minutes"),
+                ),
+                InlineKeyboardButton(
+                    text="5 دقیقه",
+                    callback_data=("project:schedule:" "5:minutes"),
+                ),
+                InlineKeyboardButton(
+                    text="10 دقیقه",
+                    callback_data=("project:schedule:" "10:minutes"),
+                ),
+                InlineKeyboardButton(
                     text="15 دقیقه",
                     callback_data=("project:schedule:" "15:minutes"),
                 ),
@@ -228,6 +244,10 @@ def schedule_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="3 ساعت",
                     callback_data=("project:schedule:" "3:hours"),
+                ),
+                InlineKeyboardButton(
+                    text="4 ساعت",
+                    callback_data=("project:schedule:" "4:hours"),
                 ),
             ],
             [

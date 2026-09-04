@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from aiogram import F, Router
+import logging
+
+from aiogram import (
+    F,
+    Router,
+)
 from aiogram.types import (
     CallbackQuery,
     Message,
 )
 
-from django_assistant_bot.bot.context import ApplicationContext
+from django_assistant_bot.bot.context import (
+    ApplicationContext,
+)
 from django_assistant_bot.bot.formatters.project import (
     format_project_deleted,
 )
@@ -21,6 +28,10 @@ router = Router(
     name="projects.delete",
 )
 
+logger = logging.getLogger(
+    __name__,
+)
+
 
 @router.callback_query(
     F.data.startswith("project:delete:"),
@@ -29,6 +40,10 @@ async def project_delete_callback(
     callback: CallbackQuery,
     context: ApplicationContext,
 ) -> None:
+    """
+    Delete a project and remove its scheduled backup job.
+    """
+
     callback_data = callback.data
 
     if not callback_data:
@@ -53,6 +68,21 @@ async def project_delete_callback(
             show_alert=True,
         )
         return
+
+    # -----------------------------------------------------
+    # SCHEDULER CLEANUP
+    # -----------------------------------------------------
+
+    try:
+        context.scheduler.remove_project(
+            project.id,
+        )
+
+    except Exception:
+        logger.exception(
+            "Project %s was deleted but its scheduler " "job could not be removed.",
+            project.id,
+        )
 
     await callback.answer("پروژه حذف شد.")
 

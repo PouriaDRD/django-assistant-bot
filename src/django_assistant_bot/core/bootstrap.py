@@ -36,6 +36,9 @@ from django_assistant_bot.services.project import (
 from django_assistant_bot.services.settings import (
     AppSettingsService,
 )
+from django_assistant_bot.services.scheduler import (
+    BackupSchedulerService,
+)
 
 
 @dataclass(
@@ -144,6 +147,14 @@ def bootstrap_application() -> ApplicationBootstrap:
     )
 
     # -----------------------------------------------------
+    # SCHEDULER
+    # -----------------------------------------------------
+
+    backup_scheduler = BackupSchedulerService(
+        projects=project_service,
+        backups=backup_coordinator,
+    )
+    # -----------------------------------------------------
     # BOOTSTRAP ADMINS
     # -----------------------------------------------------
 
@@ -163,6 +174,7 @@ def bootstrap_application() -> ApplicationBootstrap:
         settings=settings_service,
         backups=backup_coordinator,
         backup_history=backup_history_service,
+        scheduler=backup_scheduler,
     )
 
     return ApplicationBootstrap(

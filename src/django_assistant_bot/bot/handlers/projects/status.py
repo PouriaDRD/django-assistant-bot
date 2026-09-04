@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from aiogram import F, Router
+import logging
+
+from aiogram import (
+    F,
+    Router,
+)
 from aiogram.types import (
     CallbackQuery,
     Message,
 )
 
-from django_assistant_bot.bot.context import ApplicationContext
+from django_assistant_bot.bot.context import (
+    ApplicationContext,
+)
 from django_assistant_bot.bot.formatters.project import (
     format_project_details,
 )
@@ -21,6 +28,10 @@ router = Router(
     name="projects.status",
 )
 
+logger = logging.getLogger(
+    __name__,
+)
+
 
 @router.callback_query(
     F.data.startswith("project:enable:"),
@@ -29,6 +40,10 @@ async def project_enable_callback(
     callback: CallbackQuery,
     context: ApplicationContext,
 ) -> None:
+    """
+    Enable a project and synchronize its scheduler job.
+    """
+
     await _set_project_status(
         callback=callback,
         context=context,
@@ -43,6 +58,10 @@ async def project_disable_callback(
     callback: CallbackQuery,
     context: ApplicationContext,
 ) -> None:
+    """
+    Disable a project and remove its scheduler job.
+    """
+
     await _set_project_status(
         callback=callback,
         context=context,
@@ -56,6 +75,11 @@ async def _set_project_status(
     context: ApplicationContext,
     enabled: bool,
 ) -> None:
+    """
+    Update project status and immediately synchronize
+    the corresponding backup schedule.
+    """
+
     callback_data = callback.data
 
     if not callback_data:
@@ -85,6 +109,21 @@ async def _set_project_status(
             show_alert=True,
         )
         return
+
+    # -----------------------------------------------------
+    # SCHEDULER SYNC
+    # -----------------------------------------------------
+
+    try:
+        context.scheduler.sync_project(
+            project,
+        )
+
+    except Exception:
+        logger.exception(
+            "Project %s status changed but scheduler " "synchronization failed.",
+            project.id,
+        )
 
     await callback.answer(("پروژه فعال شد." if enabled else "پروژه غیرفعال شد."))
 

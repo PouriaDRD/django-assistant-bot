@@ -397,6 +397,21 @@ async def project_create_confirm(
         )
         return
 
+    # ---------------------------------------------------------
+    # SCHEDULER SYNC
+    # ---------------------------------------------------------
+
+    try:
+        context.scheduler.sync_project(
+            project,
+        )
+
+    except Exception:
+        logger.exception(
+            "Project %s was created but scheduler sync failed.",
+            project.id,
+        )
+
     await state.clear()
 
     await callback.answer("پروژه با موفقیت ایجاد شد.")
