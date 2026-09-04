@@ -22,6 +22,7 @@ class DatabaseSchema(BaseModel):
     )
 
     type: DatabaseType = DatabaseType.SQLITE
+
     path: Path
 
     @field_validator("path")
@@ -40,6 +41,7 @@ class MediaSchema(BaseModel):
     )
 
     enabled: bool = True
+
     path: Path
 
     @field_validator("path")
@@ -65,6 +67,28 @@ class ScheduleSchema(BaseModel):
     )
 
     unit: ScheduleUnit = ScheduleUnit.HOURS
+
+
+class ScheduleUpdateSchema(BaseModel):
+    """
+    Partial schedule update payload.
+
+    Only provided fields are persisted.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
+
+    enabled: bool | None = None
+
+    interval: int | None = Field(
+        default=None,
+        ge=1,
+    )
+
+    unit: ScheduleUnit | None = None
 
 
 class ProjectCreateSchema(BaseModel):
@@ -144,7 +168,9 @@ class ProjectSchema(BaseModel):
     )
 
     id: str
+
     name: str
+
     enabled: bool
 
     database: DatabaseSchema

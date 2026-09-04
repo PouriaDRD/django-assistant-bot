@@ -2,14 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import (
+    select,
+)
 from sqlalchemy.exc import (
     IntegrityError,
     SQLAlchemyError,
 )
 
-from django_assistant_bot.database.models.project import ProjectModel
-from django_assistant_bot.database.session import SessionManager
+from django_assistant_bot.database.models.project import (
+    ProjectModel,
+)
+from django_assistant_bot.database.session import (
+    SessionManager,
+)
 from django_assistant_bot.repositories.exceptions import (
     DuplicateEntityError,
     EntityNotFoundError,
@@ -22,6 +28,7 @@ from django_assistant_bot.schemas.project import (
     ProjectSchema,
     ProjectUpdateSchema,
     ScheduleSchema,
+    ScheduleUpdateSchema,
 )
 
 
@@ -38,7 +45,9 @@ class ProjectRepository:
     ) -> None:
         self._sessions = sessions
 
-    def list_all(self) -> list[ProjectSchema]:
+    def list_all(
+        self,
+    ) -> list[ProjectSchema]:
         try:
             with self._sessions.session() as session:
                 statement = select(ProjectModel).order_by(ProjectModel.created_at.asc())
@@ -122,9 +131,7 @@ class ProjectRepository:
             return project
 
         except IntegrityError as exc:
-            raise DuplicateEntityError(
-                f"Project already exists: " f"{data.name}"
-            ) from exc
+            raise DuplicateEntityError(f"Project already exists: {data.name}") from exc
 
         except SQLAlchemyError as exc:
             raise PersistenceError("Could not create project.") from exc
@@ -142,7 +149,7 @@ class ProjectRepository:
                 )
 
                 if model is None:
-                    raise EntityNotFoundError(f"Project not found: " f"{project_id}")
+                    raise EntityNotFoundError(f"Project not found: {project_id}")
 
                 if data.name is not None:
                     model.name = data.name
@@ -185,6 +192,48 @@ class ProjectRepository:
         except SQLAlchemyError as exc:
             raise PersistenceError("Could not update project.") from exc
 
+    def update_schedule(
+        self,
+        project_id: str,
+        data: ScheduleUpdateSchema,
+    ) -> ProjectSchema:
+        """
+        Partially update project backup schedule.
+
+        Fields with a value of None remain unchanged.
+        """
+
+        try:
+            with self._sessions.transaction() as session:
+                model = session.get(
+                    ProjectModel,
+                    project_id,
+                )
+
+                if model is None:
+                    raise EntityNotFoundError(f"Project not found: {project_id}")
+
+                if data.enabled is not None:
+                    model.schedule_enabled = data.enabled
+
+                if data.interval is not None:
+                    model.schedule_interval = data.interval
+
+                if data.unit is not None:
+                    model.schedule_unit = data.unit
+
+                session.flush()
+
+                project = self._to_schema(model)
+
+            return project
+
+        except EntityNotFoundError:
+            raise
+
+        except SQLAlchemyError as exc:
+            raise PersistenceError("Could not update project schedule.") from exc
+
     def set_enabled(
         self,
         project_id: str,
@@ -209,7 +258,7 @@ class ProjectRepository:
                 )
 
                 if model is None:
-                    raise EntityNotFoundError(f"Project not found: " f"{project_id}")
+                    raise EntityNotFoundError(f"Project not found: {project_id}")
 
                 project = self._to_schema(model)
 
@@ -240,8 +289,8 @@ class ProjectRepository:
                 path=Path(model.media_path),
             ),
             schedule=ScheduleSchema(
-                enabled=model.schedule_enabled,
-                interval=model.schedule_interval,
+                enabled=(model.schedule_enabled),
+                interval=(model.schedule_interval),
                 unit=model.schedule_unit,
             ),
         )

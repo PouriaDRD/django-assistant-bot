@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
+from pathlib import Path
+from pydantic import ValidationError
+
 
 from django_assistant_bot.database.models.enums import (
     DatabaseType,
@@ -10,12 +11,14 @@ from django_assistant_bot.database.models.enums import (
 )
 from django_assistant_bot.database.session import SessionManager
 from django_assistant_bot.repositories.project import ProjectRepository
+
 from django_assistant_bot.schemas.project import (
     DatabaseSchema,
     MediaSchema,
     ProjectCreateSchema,
     ProjectUpdateSchema,
     ScheduleSchema,
+    ScheduleUpdateSchema,
 )
 from django_assistant_bot.services.project import (
     ProjectAlreadyExistsError,
@@ -383,3 +386,196 @@ def test_delete_unknown_project_fails(
         service.delete_project(
             "missing-project",
         )
+
+
+# =========================================================
+# SCHEDULE MANAGEMENT
+# =========================================================
+
+
+def test_update_schedule_interval(
+    service: ProjectService,
+    project_data: ProjectCreateSchema,
+) -> None:
+    project = service.create_project(
+        project_data,
+    )
+
+    updated = service.update_schedule(
+        project.id,
+        ScheduleUpdateSchema(
+            interval=5,
+        ),
+    )
+
+    assert updated.schedule.interval == 5
+
+    # Unchanged values must be preserved.
+    assert updated.schedule.enabled == project.schedule.enabled
+
+    assert updated.schedule.unit is project.schedule.unit
+
+
+def test_update_schedule_unit(
+    service: ProjectService,
+    project_data: ProjectCreateSchema,
+) -> None:
+    project = service.create_project(
+        project_data,
+    )
+
+    updated = service.update_schedule(
+        project.id,
+        ScheduleUpdateSchema(
+            unit=ScheduleUnit.DAYS,
+        ),
+    )
+
+    assert updated.schedule.unit is ScheduleUnit.DAYS
+
+    assert updated.schedule.interval == project.schedule.interval
+
+    assert updated.schedule.enabled == project.schedule.enabled
+
+
+def test_update_schedule_interval_and_unit(
+    service: ProjectService,
+    project_data: ProjectCreateSchema,
+) -> None:
+    project = service.create_project(
+        project_data,
+    )
+
+    updated = service.update_schedule(
+        project.id,
+        ScheduleUpdateSchema(
+            interval=12,
+            unit=ScheduleUnit.HOURS,
+        ),
+    )
+
+    assert updated.schedule.interval == 12
+
+    assert updated.schedule.unit is ScheduleUnit.HOURS
+
+
+def test_disable_schedule(
+    service: ProjectService,
+    project_data: ProjectCreateSchema,
+) -> None:
+    project = service.create_project(
+        project_data,
+    )
+
+    updated = service.set_schedule_enabled(
+        project.id,
+        False,
+    )
+
+    assert updated.schedule.enabled is False
+
+    assert updated.schedule.interval == project.schedule.interval
+
+    assert updated.schedule.unit is project.schedule.unit
+
+
+def test_enable_schedule(
+    service: ProjectService,
+    project_data: ProjectCreateSchema,
+) -> None:
+    project = service.create_project(
+        project_data,
+    )
+
+    service.set_schedule_enabled(
+        project.id,
+        False,
+    )
+
+    updated = service.set_schedule_enabled(
+        project.id,
+        True,
+    )
+
+    assert updated.schedule.enabled is True
+
+
+def test_update_schedule_unknown_project_fails(
+    service: ProjectService,
+) -> None:
+    with pytest.raises(
+        ProjectNotFoundError,
+    ):
+        service.update_schedule(
+            "missing-project",
+            ScheduleUpdateSchema(
+                interval=5,
+            ),
+        )
+
+
+def test_update_schedule_with_empty_project_id_fails(
+    service: ProjectService,
+) -> None:
+    with pytest.raises(
+        ProjectValidationError,
+    ):
+        service.update_schedule(
+            "   ",
+            ScheduleUpdateSchema(
+                interval=5,
+            ),
+        )
+
+
+def test_empty_schedule_update_fails(
+    service: ProjectService,
+    project_data: ProjectCreateSchema,
+) -> None:
+    project = service.create_project(
+        project_data,
+    )
+
+    with pytest.raises(
+        ProjectValidationError,
+        match="At least one schedule field",
+    ):
+        service.update_schedule(
+            project.id,
+            ScheduleUpdateSchema(),
+        )
+
+
+def test_schedule_interval_must_be_positive() -> None:
+    with pytest.raises(
+        ValidationError,
+    ):
+        ScheduleUpdateSchema(
+            interval=0,
+        )
+
+
+def test_schedule_update_preserves_other_fields(
+    service: ProjectService,
+    project_data: ProjectCreateSchema,
+) -> None:
+    project = service.create_project(
+        project_data,
+    )
+
+    updated = service.update_schedule(
+        project.id,
+        ScheduleUpdateSchema(
+            interval=15,
+        ),
+    )
+
+    assert updated.name == project.name
+
+    assert updated.enabled == project.enabled
+
+    assert updated.database == project.database
+
+    assert updated.media == project.media
+
+    assert updated.schedule.interval == 15

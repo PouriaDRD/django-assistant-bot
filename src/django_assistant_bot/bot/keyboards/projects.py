@@ -71,9 +71,6 @@ def project_list_keyboard(
     Navigation:
         Projects Menu
         └── Project List
-
-    The back button must return to the projects menu,
-    not directly to the application main menu.
     """
 
     rows: list[list[InlineKeyboardButton]] = []
@@ -85,7 +82,7 @@ def project_list_keyboard(
             [
                 InlineKeyboardButton(
                     text=(f"{status_icon} " f"{project.name}"),
-                    callback_data=("project:view:" f"{project.id}"),
+                    callback_data=(f"project:view:" f"{project.id}"),
                 ),
             ]
         )
@@ -129,17 +126,18 @@ def project_details_keyboard(
         Projects Menu
         └── Project List
             └── Project Details
+                └── Schedule Management
     """
 
     toggle_button = (
         InlineKeyboardButton(
             text="🔴 غیرفعال کردن",
-            callback_data=("project:disable:" f"{project_id}"),
+            callback_data=(f"project:disable:" f"{project_id}"),
         )
         if enabled
         else InlineKeyboardButton(
             text="🟢 فعال کردن",
-            callback_data=("project:enable:" f"{project_id}"),
+            callback_data=(f"project:enable:" f"{project_id}"),
         )
     )
 
@@ -147,8 +145,14 @@ def project_details_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="💾 Backup Now",
-                    callback_data=("project:backup:" f"{project_id}"),
+                    text="💾 تهیه بکاپ",
+                    callback_data=(f"project:backup:" f"{project_id}"),
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏰ زمان‌بندی بکاپ",
+                    callback_data=(f"sc:p:" f"{project_id}:p"),
                 ),
             ],
             [
@@ -157,7 +161,7 @@ def project_details_keyboard(
             [
                 InlineKeyboardButton(
                     text="🗑 حذف پروژه",
-                    callback_data=("project:delete:" f"{project_id}"),
+                    callback_data=(f"project:delete:" f"{project_id}"),
                 ),
             ],
             [
@@ -185,13 +189,13 @@ def project_confirmation_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="✅ تأیید و ایجاد",
-                    callback_data="project:create:confirm",
+                    callback_data=("project:create:confirm"),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="❌ لغو",
-                    callback_data="project:create:cancel",
+                    callback_data=("project:create:cancel"),
                 ),
             ],
         ],
@@ -199,13 +203,14 @@ def project_confirmation_keyboard() -> InlineKeyboardMarkup:
 
 
 # =========================================================
-# PROJECT SCHEDULE
+# PROJECT CREATION SCHEDULE
 # =========================================================
 
 
 def schedule_keyboard() -> InlineKeyboardMarkup:
     """
-    Build predefined project backup schedule options.
+    Build predefined project backup schedule options
+    used during project creation.
     """
 
     return InlineKeyboardMarkup(
@@ -219,6 +224,8 @@ def schedule_keyboard() -> InlineKeyboardMarkup:
                     text="2 دقیقه",
                     callback_data=("project:schedule:" "2:minutes"),
                 ),
+            ],
+            [
                 InlineKeyboardButton(
                     text="5 دقیقه",
                     callback_data=("project:schedule:" "5:minutes"),
@@ -227,6 +234,8 @@ def schedule_keyboard() -> InlineKeyboardMarkup:
                     text="10 دقیقه",
                     callback_data=("project:schedule:" "10:minutes"),
                 ),
+            ],
+            [
                 InlineKeyboardButton(
                     text="15 دقیقه",
                     callback_data=("project:schedule:" "15:minutes"),
@@ -245,22 +254,22 @@ def schedule_keyboard() -> InlineKeyboardMarkup:
                     text="3 ساعت",
                     callback_data=("project:schedule:" "3:hours"),
                 ),
+            ],
+            [
                 InlineKeyboardButton(
                     text="4 ساعت",
                     callback_data=("project:schedule:" "4:hours"),
                 ),
-            ],
-            [
                 InlineKeyboardButton(
                     text="6 ساعت",
                     callback_data=("project:schedule:" "6:hours"),
                 ),
+            ],
+            [
                 InlineKeyboardButton(
                     text="12 ساعت",
                     callback_data=("project:schedule:" "12:hours"),
                 ),
-            ],
-            [
                 InlineKeyboardButton(
                     text="24 ساعت",
                     callback_data=("project:schedule:" "24:hours"),

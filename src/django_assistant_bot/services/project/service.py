@@ -5,11 +5,14 @@ from django_assistant_bot.repositories.exceptions import (
     EntityNotFoundError,
     PersistenceError,
 )
-from django_assistant_bot.repositories.project import ProjectRepository
+from django_assistant_bot.repositories.project import (
+    ProjectRepository,
+)
 from django_assistant_bot.schemas.project import (
     ProjectCreateSchema,
     ProjectSchema,
     ProjectUpdateSchema,
+    ScheduleUpdateSchema,
 )
 from django_assistant_bot.services.project.exceptions import (
     ProjectAlreadyExistsError,
@@ -27,7 +30,7 @@ class ProjectService:
     - SQLAlchemy sessions
     - SQLite
     - Telegram
-    - Flask
+    - Scheduler infrastructure
     - JSON configuration
     """
 
@@ -37,7 +40,9 @@ class ProjectService:
     ) -> None:
         self._repository = repository
 
-    def list_projects(self) -> list[ProjectSchema]:
+    def list_projects(
+        self,
+    ) -> list[ProjectSchema]:
         try:
             return self._repository.list_all()
 
@@ -112,6 +117,53 @@ class ProjectService:
         except PersistenceError as exc:
             raise ProjectPersistenceError("Could not update project.") from exc
 
+    def update_schedule(
+        self,
+        project_id: str,
+        data: ScheduleUpdateSchema,
+    ) -> ProjectSchema:
+        """
+        Partially update backup schedule configuration.
+        """
+
+        normalized_id = project_id.strip()
+
+        if not normalized_id:
+            raise ProjectValidationError("Project ID cannot be empty.")
+
+        if not data.model_fields_set:
+            raise ProjectValidationError(
+                "At least one schedule field must be provided."
+            )
+
+        try:
+            return self._repository.update_schedule(
+                normalized_id,
+                data,
+            )
+
+        except EntityNotFoundError as exc:
+            raise ProjectNotFoundError(f"Project not found: {normalized_id}") from exc
+
+        except PersistenceError as exc:
+            raise ProjectPersistenceError("Could not update project schedule.") from exc
+
+    def set_schedule_enabled(
+        self,
+        project_id: str,
+        enabled: bool,
+    ) -> ProjectSchema:
+        """
+        Enable or disable scheduled backups.
+        """
+
+        return self.update_schedule(
+            project_id,
+            ScheduleUpdateSchema(
+                enabled=enabled,
+            ),
+        )
+
     def set_enabled(
         self,
         project_id: str,
@@ -144,9 +196,7 @@ class ProjectService:
             raise ProjectValidationError("Project ID cannot be empty.")
 
         try:
-            return self._repository.delete(
-                normalized_id,
-            )
+            return self._repository.delete(normalized_id)
 
         except EntityNotFoundError as exc:
             raise ProjectNotFoundError(f"Project not found: {normalized_id}") from exc
