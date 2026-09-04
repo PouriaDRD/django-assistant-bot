@@ -17,6 +17,9 @@ from aiogram.fsm.storage.memory import (
 from django_assistant_bot.bot.context import (
     ApplicationContext,
 )
+from django_assistant_bot.bot.handlers.admins import (
+    router as admins_router,
+)
 from django_assistant_bot.bot.handlers.backups import (
     router as backups_router,
 )
@@ -32,14 +35,14 @@ from django_assistant_bot.bot.handlers.scheduler import (
 from django_assistant_bot.bot.handlers.settings import (
     router as settings_router,
 )
+from django_assistant_bot.bot.handlers.system_status import (
+    router as system_status_router,
+)
 from django_assistant_bot.bot.middlewares.auth import (
     AdminAuthMiddleware,
 )
 from django_assistant_bot.bot.middlewares.bot_enabled import (
     BotEnabledMiddleware,
-)
-from django_assistant_bot.bot.handlers.admins import (
-    router as admins_router,
 )
 
 
@@ -84,12 +87,20 @@ class TelegramBot:
     def bot(
         self,
     ) -> Bot:
+        """
+        Return configured Telegram bot instance.
+        """
+
         return self._bot
 
     @property
     def dispatcher(
         self,
     ) -> Dispatcher:
+        """
+        Return configured aiogram dispatcher.
+        """
+
         return self._dispatcher
 
     def _configure(
@@ -99,14 +110,17 @@ class TelegramBot:
         Configure middlewares, routers and dependencies.
         """
 
-        # -------------------------------------------------
+        # =================================================
         # MIDDLEWARES
-        # -------------------------------------------------
+        # =================================================
 
+        # Authentication must run first so only authorized
+        # administrators can access the application.
         self._dispatcher.message.middleware(
             self._auth_middleware,
         )
 
+        # Global bot state is checked after authentication.
         self._dispatcher.message.middleware(
             self._bot_enabled_middleware,
         )
@@ -119,9 +133,9 @@ class TelegramBot:
             self._bot_enabled_middleware,
         )
 
-        # -------------------------------------------------
+        # =================================================
         # ROUTERS
-        # -------------------------------------------------
+        # =================================================
 
         self._dispatcher.include_router(
             common_router,
@@ -129,6 +143,14 @@ class TelegramBot:
 
         self._dispatcher.include_router(
             settings_router,
+        )
+
+        self._dispatcher.include_router(
+            system_status_router,
+        )
+
+        self._dispatcher.include_router(
+            admins_router,
         )
 
         self._dispatcher.include_router(
@@ -143,14 +165,12 @@ class TelegramBot:
             projects_router,
         )
 
-        self._dispatcher.include_router(
-            admins_router,
-        )
-
-        # -------------------------------------------------
+        # =================================================
         # DEPENDENCIES
-        # -------------------------------------------------
+        # =================================================
 
+        # ApplicationContext is injected into handlers by
+        # aiogram dependency resolution.
         self._dispatcher["context"] = self._context
 
     async def start(

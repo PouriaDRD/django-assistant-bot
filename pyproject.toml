@@ -12,6 +12,10 @@ version = "0.1.0"
 description = "Telegram-based backup and management assistant for Django projects."
 requires-python = ">=3.13"
 
+dependencies = [
+    "psutil>=7.0,<8.0",
+]
+
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -126,6 +126,14 @@ class BackupSchedulerService:
 
         return self._started
 
+    @property
+    def is_paused(self) -> bool:
+        """
+        Return whether scheduler execution is currently paused.
+        """
+
+        return self._started and self._paused
+
     # =====================================================
     # LIFECYCLE
     # =====================================================

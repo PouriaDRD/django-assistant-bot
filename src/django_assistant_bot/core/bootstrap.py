@@ -33,11 +33,14 @@ from django_assistant_bot.services.backup import (
 from django_assistant_bot.services.project import (
     ProjectService,
 )
+from django_assistant_bot.services.scheduler import (
+    BackupSchedulerService,
+)
 from django_assistant_bot.services.settings import (
     AppSettingsService,
 )
-from django_assistant_bot.services.scheduler import (
-    BackupSchedulerService,
+from django_assistant_bot.services.system_status import (
+    SystemStatusService,
 )
 
 
@@ -154,6 +157,18 @@ def bootstrap_application() -> ApplicationBootstrap:
         projects=project_service,
         backups=backup_coordinator,
     )
+
+    # -----------------------------------------------------
+    # SYSTEM STATUS
+    # -----------------------------------------------------
+
+    system_status_service = SystemStatusService(
+        settings=settings_service,
+        projects=project_service,
+        admins=admin_service,
+        scheduler=backup_scheduler,
+    )
+
     # -----------------------------------------------------
     # BOOTSTRAP ADMINS
     # -----------------------------------------------------
@@ -175,6 +190,7 @@ def bootstrap_application() -> ApplicationBootstrap:
         backups=backup_coordinator,
         backup_history=backup_history_service,
         scheduler=backup_scheduler,
+        system_status=system_status_service,
     )
 
     return ApplicationBootstrap(

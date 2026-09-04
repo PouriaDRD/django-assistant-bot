@@ -15,11 +15,14 @@ from django_assistant_bot.services.backup import (
 from django_assistant_bot.services.project import (
     ProjectService,
 )
+from django_assistant_bot.services.scheduler import (
+    BackupSchedulerService,
+)
 from django_assistant_bot.services.settings import (
     AppSettingsService,
 )
-from django_assistant_bot.services.scheduler import (
-    BackupSchedulerService,
+from django_assistant_bot.services.system_status import (
+    SystemStatusService,
 )
 
 
@@ -49,3 +52,5 @@ class ApplicationContext:
     backup_history: BackupHistoryService
 
     scheduler: BackupSchedulerService
+
+    system_status: SystemStatusService
