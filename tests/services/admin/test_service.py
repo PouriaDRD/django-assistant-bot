@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import pytest
 
-from django_assistant_bot.database.session import SessionManager
-from django_assistant_bot.repositories.admin import AdminRepository
+from django_assistant_bot.database.session import (
+    SessionManager,
+)
+from django_assistant_bot.repositories.admin import (
+    AdminRepository,
+)
 from django_assistant_bot.services.admin import (
     AdminAlreadyExistsError,
     AdminNotFoundError,
     AdminService,
     AdminValidationError,
+    LastAdminRemovalError,
 )
 
 
@@ -21,6 +26,11 @@ def service(
             session_manager,
         )
     )
+
+
+# =========================================================
+# CREATE
+# =========================================================
 
 
 def test_add_admin(
@@ -48,6 +58,11 @@ def test_duplicate_admin_fails(
         )
 
 
+# =========================================================
+# READ
+# =========================================================
+
+
 def test_is_admin(
     service: AdminService,
 ) -> None:
@@ -73,8 +88,13 @@ def test_is_admin(
 def test_list_admins(
     service: AdminService,
 ) -> None:
-    service.add_admin(111)
-    service.add_admin(222)
+    service.add_admin(
+        111,
+    )
+
+    service.add_admin(
+        222,
+    )
 
     admins = service.list_admins()
 
@@ -84,11 +104,20 @@ def test_list_admins(
     }
 
 
+# =========================================================
+# DELETE
+# =========================================================
+
+
 def test_remove_admin(
     service: AdminService,
 ) -> None:
     service.add_admin(
         123,
+    )
+
+    service.add_admin(
+        456,
     )
 
     service.remove_admin(
@@ -102,6 +131,13 @@ def test_remove_admin(
         is False
     )
 
+    assert (
+        service.is_admin(
+            456,
+        )
+        is True
+    )
+
 
 def test_remove_unknown_admin_fails(
     service: AdminService,
@@ -112,6 +148,63 @@ def test_remove_unknown_admin_fails(
         service.remove_admin(
             999,
         )
+
+
+def test_last_admin_cannot_be_removed(
+    service: AdminService,
+) -> None:
+    service.add_admin(
+        123,
+    )
+
+    with pytest.raises(
+        LastAdminRemovalError,
+    ):
+        service.remove_admin(
+            123,
+        )
+
+    assert (
+        service.is_admin(
+            123,
+        )
+        is True
+    )
+
+
+def test_admin_can_be_removed_when_another_admin_exists(
+    service: AdminService,
+) -> None:
+    service.add_admin(
+        111,
+    )
+
+    service.add_admin(
+        222,
+    )
+
+    service.remove_admin(
+        111,
+    )
+
+    assert (
+        service.is_admin(
+            111,
+        )
+        is False
+    )
+
+    assert (
+        service.is_admin(
+            222,
+        )
+        is True
+    )
+
+
+# =========================================================
+# VALIDATION
+# =========================================================
 
 
 @pytest.mark.parametrize(

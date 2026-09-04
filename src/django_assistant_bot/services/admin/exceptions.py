@@ -2,20 +2,37 @@ from __future__ import annotations
 
 
 class AdminError(Exception):
-    """Base exception for administrator operations."""
-
-
-class AdminAlreadyExistsError(AdminError):
-    """Raised when an administrator already exists."""
-
-
-class AdminNotFoundError(AdminError):
-    """Raised when an administrator cannot be found."""
+    """
+    Base exception for administrator service errors.
+    """
 
 
 class AdminValidationError(AdminError):
-    """Raised when administrator data is invalid."""
+    """
+    Administrator input is invalid.
+    """
+
+
+class AdminAlreadyExistsError(AdminError):
+    """
+    Administrator already exists.
+    """
+
+
+class AdminNotFoundError(AdminError):
+    """
+    Administrator does not exist.
+    """
+
+
+class LastAdminRemovalError(AdminError):
+    """
+    Removing the final administrator would lock the
+    application.
+    """
 
 
 class AdminPersistenceError(AdminError):
-    """Raised when administrator persistence fails."""
+    """
+    Administrator persistence operation failed.
+    """

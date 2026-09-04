@@ -8,6 +8,9 @@ from typing import Protocol
 from aiogram import Bot
 from aiogram.exceptions import (
     TelegramAPIError,
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramNetworkError,
 )
 from aiogram.types import (
     FSInputFile,
@@ -83,7 +86,7 @@ class TelegramBackupDelivery:
 
         if not admins:
             logger.warning(
-                "Backup %s has no Telegram administrators " "to receive it.",
+                ("Backup %s has no Telegram administrators " "to receive it."),
                 result.project_id,
             )
 
@@ -102,8 +105,10 @@ class TelegramBackupDelivery:
             )
 
             raise BackupDeliveryFileTooLargeError(
-                "Backup archive exceeds Telegram "
-                f"upload limit: {archive_size} bytes."
+                (
+                    "Backup archive exceeds Telegram "
+                    f"upload limit: {archive_size} bytes."
+                )
             )
 
         succeeded = 0
@@ -119,11 +124,56 @@ class TelegramBackupDelivery:
                     caption=caption,
                 )
 
+            except TelegramForbiddenError as exc:
+                failed += 1
+
+                logger.warning(
+                    (
+                        "Could not deliver backup for project %s "
+                        "to Telegram admin %s: user blocked the bot. "
+                        "message=%s"
+                    ),
+                    result.project_id,
+                    admin.telegram_user_id,
+                    exc.message,
+                )
+
+            except TelegramBadRequest as exc:
+                failed += 1
+
+                logger.warning(
+                    (
+                        "Could not deliver backup for project %s "
+                        "to Telegram admin %s: chat unavailable. "
+                        "message=%s"
+                    ),
+                    result.project_id,
+                    admin.telegram_user_id,
+                    exc.message,
+                )
+
+            except TelegramNetworkError as exc:
+                failed += 1
+
+                logger.warning(
+                    (
+                        "Could not deliver backup for project %s "
+                        "to Telegram admin %s due to temporary "
+                        "network error: %s"
+                    ),
+                    result.project_id,
+                    admin.telegram_user_id,
+                    exc,
+                )
+
             except TelegramAPIError:
                 failed += 1
 
                 logger.exception(
-                    "Could not deliver backup for project %s " "to Telegram admin %s.",
+                    (
+                        "Unexpected Telegram API delivery failure "
+                        "for project %s and admin %s."
+                    ),
                     result.project_id,
                     admin.telegram_user_id,
                 )
@@ -132,8 +182,10 @@ class TelegramBackupDelivery:
                 failed += 1
 
                 logger.exception(
-                    "Unexpected Telegram delivery failure for "
-                    "project %s and admin %s.",
+                    (
+                        "Unexpected Telegram delivery failure for "
+                        "project %s and admin %s."
+                    ),
                     result.project_id,
                     admin.telegram_user_id,
                 )
@@ -142,7 +194,7 @@ class TelegramBackupDelivery:
                 succeeded += 1
 
                 logger.info(
-                    "Backup for project %s delivered to " "Telegram admin %s.",
+                    ("Backup for project %s delivered to " "Telegram admin %s."),
                     result.project_id,
                     admin.telegram_user_id,
                 )
@@ -187,9 +239,54 @@ class TelegramBackupDelivery:
                     text=message,
                 )
 
+            except TelegramForbiddenError as exc:
+                logger.warning(
+                    (
+                        "Could not notify Telegram admin %s about "
+                        "oversized backup: user blocked the bot. "
+                        "message=%s"
+                    ),
+                    admin.telegram_user_id,
+                    exc.message,
+                )
+
+            except TelegramBadRequest as exc:
+                logger.warning(
+                    (
+                        "Could not notify Telegram admin %s about "
+                        "oversized backup: chat unavailable. "
+                        "message=%s"
+                    ),
+                    admin.telegram_user_id,
+                    exc.message,
+                )
+
+            except TelegramNetworkError as exc:
+                logger.warning(
+                    (
+                        "Could not notify Telegram admin %s about "
+                        "oversized backup due to temporary network "
+                        "error: %s"
+                    ),
+                    admin.telegram_user_id,
+                    exc,
+                )
+
+            except TelegramAPIError:
+                logger.exception(
+                    (
+                        "Unexpected Telegram API error while "
+                        "notifying admin %s about oversized backup."
+                    ),
+                    admin.telegram_user_id,
+                )
+
             except Exception:
                 logger.exception(
-                    "Could not notify Telegram admin %s about " "oversized backup.",
+                    (
+                        "Unexpected error while notifying Telegram "
+                        "admin %s about oversized backup."
+                    ),
                     admin.telegram_user_id,
                 )
 

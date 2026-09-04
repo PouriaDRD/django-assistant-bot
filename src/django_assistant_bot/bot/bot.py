@@ -38,6 +38,9 @@ from django_assistant_bot.bot.middlewares.auth import (
 from django_assistant_bot.bot.middlewares.bot_enabled import (
     BotEnabledMiddleware,
 )
+from django_assistant_bot.bot.handlers.admins import (
+    router as admins_router,
+)
 
 
 class TelegramBot:
@@ -138,6 +141,10 @@ class TelegramBot:
 
         self._dispatcher.include_router(
             projects_router,
+        )
+
+        self._dispatcher.include_router(
+            admins_router,
         )
 
         # -------------------------------------------------
