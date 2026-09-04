@@ -25,7 +25,7 @@ from django_assistant_bot.bot.formatters.settings import (
     format_settings_menu,
 )
 from django_assistant_bot.bot.handlers.common import (
-    build_welcome_message,
+    build_main_menu_message,
 )
 from django_assistant_bot.bot.keyboards.main import (
     main_menu_keyboard,
@@ -133,7 +133,11 @@ async def settings_menu_callback(
         format_settings_menu(
             settings,
         ),
-        reply_markup=(build_settings_keyboard(settings)),
+        reply_markup=(
+            build_settings_keyboard(
+                settings,
+            )
+        ),
     )
 
 
@@ -229,7 +233,7 @@ async def enable_bot_callback(
 
     if scheduler_error:
         await callback.answer(
-            "ربات فعال شد، اما راه‌اندازی " "زمان‌بندی با خطا مواجه شد.",
+            ("ربات فعال شد، اما راه‌اندازی " "زمان‌بندی با خطا مواجه شد."),
             show_alert=True,
         )
 
@@ -237,12 +241,12 @@ async def enable_bot_callback(
         await callback.answer("ربات فعال شد.")
 
     try:
-        text = build_welcome_message(
+        text = build_main_menu_message(
             context,
         )
 
     except Exception:
-        logger.exception("Could not build main dashboard after enabling bot.")
+        logger.exception(("Could not build main dashboard " "after enabling bot."))
 
         settings = context.settings.get_settings()
 
@@ -250,7 +254,11 @@ async def enable_bot_callback(
             format_settings_menu(
                 settings,
             ),
-            reply_markup=(build_settings_keyboard(settings)),
+            reply_markup=(
+                build_settings_keyboard(
+                    settings,
+                )
+            ),
         )
 
         return
@@ -300,7 +308,11 @@ async def enable_backups_callback(
         format_settings_menu(
             settings,
         ),
-        reply_markup=(build_settings_keyboard(settings)),
+        reply_markup=(
+            build_settings_keyboard(
+                settings,
+            )
+        ),
     )
 
 
@@ -343,7 +355,11 @@ async def disable_backups_callback(
         format_settings_menu(
             settings,
         ),
-        reply_markup=(build_settings_keyboard(settings)),
+        reply_markup=(
+            build_settings_keyboard(
+                settings,
+            )
+        ),
     )
 
 
@@ -426,7 +442,7 @@ async def set_compression_level_callback(
 
     if not 0 <= compression_level <= 9:
         await callback.answer(
-            "سطح فشرده‌سازی باید بین 0 تا 9 باشد.",
+            ("سطح فشرده‌سازی باید " "بین 0 تا 9 باشد."),
             show_alert=True,
         )
         return
@@ -459,7 +475,7 @@ async def set_compression_level_callback(
         )
         return
 
-    await callback.answer("سطح فشرده‌سازی " f"روی {compression_level} تنظیم شد.")
+    await callback.answer(("سطح فشرده‌سازی " f"روی {compression_level} تنظیم شد."))
 
     await callback.message.edit_text(
         format_compression_level_menu(
@@ -512,7 +528,11 @@ async def enable_retention_callback(
         format_settings_menu(
             settings,
         ),
-        reply_markup=(build_settings_keyboard(settings)),
+        reply_markup=(
+            build_settings_keyboard(
+                settings,
+            )
+        ),
     )
 
 
@@ -555,7 +575,11 @@ async def disable_retention_callback(
         format_settings_menu(
             settings,
         ),
-        reply_markup=(build_settings_keyboard(settings)),
+        reply_markup=(
+            build_settings_keyboard(
+                settings,
+            )
+        ),
     )
 
 
@@ -631,15 +655,17 @@ async def retention_keep_last_handler(
 
     except ValueError:
         await message.answer(
-            "❌ مقدار واردشده معتبر نیست.\n"
-            "\n"
-            "لطفاً یک عدد صحیح بزرگ‌تر یا مساوی "
-            "با 1 وارد کنید."
+            (
+                "❌ مقدار واردشده معتبر نیست.\n"
+                "\n"
+                "لطفاً یک عدد صحیح بزرگ‌تر یا مساوی "
+                "با 1 وارد کنید."
+            )
         )
         return
 
     if keep_last < 1:
-        await message.answer("❌ تعداد بکاپ‌ها باید حداقل 1 باشد.")
+        await message.answer(("❌ تعداد بکاپ‌ها باید " "حداقل 1 باشد."))
         return
 
     try:
@@ -652,21 +678,27 @@ async def retention_keep_last_handler(
         return
 
     except SettingsPersistenceError:
-        logger.exception("Could not update backup retention keep-last.")
+        logger.exception(("Could not update backup " "retention keep-last."))
 
-        await message.answer("❌ خطا در ذخیره تنظیمات نگهداری بکاپ‌ها.")
+        await message.answer(("❌ خطا در ذخیره تنظیمات " "نگهداری بکاپ‌ها."))
         return
 
     await state.clear()
 
     await message.answer(
-        "✅ تعداد بکاپ‌های نگهداری‌شده "
-        f"روی {keep_last} تنظیم شد.\n"
-        "\n"
-        + format_settings_menu(
-            settings,
+        (
+            "✅ تعداد بکاپ‌های نگهداری‌شده "
+            f"روی {keep_last} تنظیم شد.\n"
+            "\n"
+            + format_settings_menu(
+                settings,
+            )
         ),
-        reply_markup=(build_settings_keyboard(settings)),
+        reply_markup=(
+            build_settings_keyboard(
+                settings,
+            )
+        ),
     )
 
 
@@ -712,7 +744,11 @@ async def retention_keep_last_cancel_callback(
         format_settings_menu(
             settings,
         ),
-        reply_markup=(build_settings_keyboard(settings)),
+        reply_markup=(
+            build_settings_keyboard(
+                settings,
+            )
+        ),
     )
 
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from aiogram import F, Router
+from aiogram import (
+    F,
+    Router,
+)
 from aiogram.filters import (
     Command,
     CommandStart,
@@ -22,7 +25,41 @@ router = Router(
 )
 
 
-def build_welcome_message(
+# =========================================================
+# START MESSAGE
+# =========================================================
+
+
+def build_start_message() -> str:
+    """
+    Build the standalone /start welcome message.
+
+    /start intentionally does not render the application
+    dashboard or main menu keyboard.
+
+    The administration dashboard is available through
+    /menu instead.
+    """
+
+    return (
+        "👋 <b>به Django Assistant Bot خوش آمدید</b>\n"
+        "\n"
+        "این ربات برای مدیریت و تهیه نسخه پشتیبان "
+        "از پروژه‌های Django طراحی شده است.\n"
+        "\n"
+        "برای باز کردن منوی مدیریت از دستور زیر "
+        "استفاده کنید:\n"
+        "\n"
+        "👉 /menu"
+    )
+
+
+# =========================================================
+# MAIN MENU MESSAGE
+# =========================================================
+
+
+def build_main_menu_message(
     context: ApplicationContext,
 ) -> str:
     """
@@ -45,12 +82,15 @@ def build_welcome_message(
         "\n"
         f"وضعیت ربات: {bot_status}\n"
         f"وضعیت بکاپ: {backup_status}\n"
-        f"تعداد پروژه‌ها: "
-        f"<b>{project_count}</b>\n"
+        f"تعداد پروژه‌ها: <b>{project_count}</b>\n"
         "\n"
-        "یکی از گزینه‌های زیر را "
-        "انتخاب کنید:"
+        "یکی از گزینه‌های زیر را انتخاب کنید:"
     )
+
+
+# =========================================================
+# /START
+# =========================================================
 
 
 @router.message(
@@ -58,14 +98,45 @@ def build_welcome_message(
 )
 async def start_handler(
     message: Message,
+) -> None:
+    """
+    Display the standalone bot introduction.
+
+    The main menu is intentionally not attached here.
+    """
+
+    await message.answer(
+        build_start_message(),
+    )
+
+
+# =========================================================
+# /MENU
+# =========================================================
+
+
+@router.message(
+    Command("menu"),
+)
+async def menu_handler(
+    message: Message,
     context: ApplicationContext,
 ) -> None:
+    """
+    Display the main administration dashboard.
+    """
+
     await message.answer(
-        build_welcome_message(
+        build_main_menu_message(
             context,
         ),
         reply_markup=(main_menu_keyboard()),
     )
+
+
+# =========================================================
+# /HELP
+# =========================================================
 
 
 @router.message(
@@ -74,13 +145,25 @@ async def start_handler(
 async def help_handler(
     message: Message,
 ) -> None:
+    """
+    Display the temporary command help.
+
+    A complete project guide will replace this message
+    after all features are finalized.
+    """
+
     await message.answer(
         "ℹ️ <b>راهنما</b>\n"
         "\n"
-        "/start — منوی اصلی\n"
-        "/project — مدیریت پروژه‌ها\n"
+        "/start — معرفی ربات\n"
+        "/menu — نمایش منوی اصلی\n"
         "/help — نمایش راهنما"
     )
+
+
+# =========================================================
+# MAIN MENU CALLBACK
+# =========================================================
 
 
 @router.callback_query(
@@ -90,6 +173,10 @@ async def main_menu_callback(
     callback: CallbackQuery,
     context: ApplicationContext,
 ) -> None:
+    """
+    Return to the main administration dashboard.
+    """
+
     await callback.answer()
 
     if not isinstance(
@@ -99,8 +186,19 @@ async def main_menu_callback(
         return
 
     await callback.message.edit_text(
-        build_welcome_message(
+        build_main_menu_message(
             context,
         ),
         reply_markup=(main_menu_keyboard()),
     )
+
+
+__all__ = [
+    "build_main_menu_message",
+    "build_start_message",
+    "help_handler",
+    "main_menu_callback",
+    "menu_handler",
+    "router",
+    "start_handler",
+]

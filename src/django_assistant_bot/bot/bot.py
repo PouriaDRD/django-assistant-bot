@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from aiogram import (
     Bot,
     Dispatcher,
@@ -12,6 +14,11 @@ from aiogram.enums import (
 )
 from aiogram.fsm.storage.memory import (
     MemoryStorage,
+)
+from aiogram.types import (
+    BotCommand,
+    BotCommandScopeAllPrivateChats,
+    BotCommandScopeDefault,
 )
 
 from django_assistant_bot.bot.context import (
@@ -44,6 +51,20 @@ from django_assistant_bot.bot.middlewares.auth import (
 from django_assistant_bot.bot.middlewares.bot_enabled import (
     BotEnabledMiddleware,
 )
+
+# =========================================================
+# LOGGER
+# =========================================================
+
+
+logger = logging.getLogger(
+    __name__,
+)
+
+
+# =========================================================
+# TELEGRAM BOT
+# =========================================================
 
 
 class TelegramBot:
@@ -83,6 +104,10 @@ class TelegramBot:
 
         self._configure()
 
+    # =====================================================
+    # PROPERTIES
+    # =====================================================
+
     @property
     def bot(
         self,
@@ -102,6 +127,10 @@ class TelegramBot:
         """
 
         return self._dispatcher
+
+    # =====================================================
+    # CONFIGURATION
+    # =====================================================
 
     def _configure(
         self,
@@ -173,12 +202,139 @@ class TelegramBot:
         # aiogram dependency resolution.
         self._dispatcher["context"] = self._context
 
+    # =====================================================
+    # COMMANDS
+    # =====================================================
+
+    @staticmethod
+    def _build_commands() -> list[BotCommand]:
+        """
+        Build Telegram command menu.
+        """
+
+        return [
+            BotCommand(
+                command="start",
+                description="شروع و معرفی ربات",
+            ),
+            BotCommand(
+                command="menu",
+                description="نمایش منوی اصلی",
+            ),
+            BotCommand(
+                command="help",
+                description="نمایش راهنما",
+            ),
+        ]
+
+    async def _clear_legacy_commands(
+        self,
+    ) -> None:
+        """
+        Remove legacy command sets.
+
+        Telegram may keep different command lists for
+        different scopes and languages. More specific
+        command lists can override the default list.
+        """
+
+        default_scope = BotCommandScopeDefault()
+
+        private_scope = BotCommandScopeAllPrivateChats()
+
+        language_codes = (
+            "fa",
+            "en",
+        )
+
+        for language_code in language_codes:
+            await self._bot.delete_my_commands(
+                scope=default_scope,
+                language_code=language_code,
+            )
+
+            await self._bot.delete_my_commands(
+                scope=private_scope,
+                language_code=language_code,
+            )
+
+        logger.info(("Legacy Telegram bot commands " "were cleared."))
+
+    async def _register_commands(
+        self,
+    ) -> None:
+        """
+        Register canonical Telegram bot commands.
+
+        Commands are registered both globally and for
+        private chats to avoid legacy scope conflicts.
+        """
+
+        commands = self._build_commands()
+
+        default_scope = BotCommandScopeDefault()
+
+        private_scope = BotCommandScopeAllPrivateChats()
+
+        # Remove old localized command definitions first.
+        await self._clear_legacy_commands()
+
+        # Default fallback command list.
+        await self._bot.set_my_commands(
+            commands=commands,
+            scope=default_scope,
+        )
+
+        # Explicit command list for private bot chats.
+        await self._bot.set_my_commands(
+            commands=commands,
+            scope=private_scope,
+        )
+
+        logger.info(("Telegram bot commands " "were registered."))
+
+        await self._log_registered_commands(
+            private_scope,
+        )
+
+    async def _log_registered_commands(
+        self,
+        scope: BotCommandScopeAllPrivateChats,
+    ) -> None:
+        """
+        Read back and log registered Telegram commands.
+
+        This helps verify the actual command list stored
+        by Telegram.
+        """
+
+        commands = await self._bot.get_my_commands(
+            scope=scope,
+        )
+
+        if not commands:
+            logger.warning(("Telegram returned an empty " "command list."))
+            return
+
+        for command in commands:
+            logger.info(
+                ("Telegram command registered: " "/%s - %s"),
+                command.command,
+                command.description,
+            )
+
+    # =====================================================
+    # LIFECYCLE
+    # =====================================================
+
     async def start(
         self,
     ) -> None:
         """
-        Start Telegram polling.
+        Register Telegram commands and start polling.
         """
+
+        await self._register_commands()
 
         await self._dispatcher.start_polling(
             self._bot,
@@ -192,3 +348,8 @@ class TelegramBot:
         """
 
         await self._bot.session.close()
+
+
+__all__ = [
+    "TelegramBot",
+]
