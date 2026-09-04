@@ -3,13 +3,36 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from sqlalchemy import Engine, event
-from sqlalchemy.engine import URL
-from sqlalchemy.engine.interfaces import DBAPIConnection
-from sqlalchemy.engine.url import URL as SQLAlchemyURL
-from sqlalchemy import create_engine
+from sqlalchemy import (
+    Engine,
+    create_engine,
+    event,
+)
+from sqlalchemy.engine import (
+    URL,
+)
+from sqlalchemy.engine.interfaces import (
+    DBAPIConnection,
+)
+from sqlalchemy.engine.url import (
+    URL as SQLAlchemyURL,
+)
 
-from django_assistant_bot.core.environment import EnvironmentSettings
+from django_assistant_bot.core.paths import (
+    DATABASE_PATH,
+)
+
+# =========================================================
+# SQLITE
+# =========================================================
+
+
+SQLITE_TIMEOUT_SECONDS = 10.0
+
+
+# =========================================================
+# URL
+# =========================================================
 
 
 def build_database_url(
@@ -18,48 +41,52 @@ def build_database_url(
     """
     Build a SQLAlchemy SQLite URL safely.
 
-    Using URL.create avoids platform-specific escaping issues,
-    especially on Windows paths.
+    Using URL.create avoids platform-specific escaping
+    issues, especially on Windows paths.
     """
 
     return URL.create(
-        drivername="sqlite+pysqlite",
+        drivername=("sqlite+pysqlite"),
         database=str(database_path),
     )
 
 
-def create_database_engine(
-    settings: EnvironmentSettings,
-) -> Engine:
+# =========================================================
+# ENGINE
+# =========================================================
+
+
+def create_database_engine() -> Engine:
     """
     Create the application's SQLAlchemy engine.
     """
 
-    database_path = settings.database_path
-
-    database_path.parent.mkdir(
+    DATABASE_PATH.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    database_url = build_database_url(
-        database_path,
-    )
+    database_url = build_database_url(DATABASE_PATH)
 
     engine = create_engine(
         database_url,
         pool_pre_ping=True,
         connect_args={
-            "timeout": (settings.sqlite_timeout_seconds),
+            "timeout": (SQLITE_TIMEOUT_SECONDS),
         },
     )
 
     _register_sqlite_events(
         engine=engine,
-        timeout_seconds=(settings.sqlite_timeout_seconds),
+        timeout_seconds=(SQLITE_TIMEOUT_SECONDS),
     )
 
     return engine
+
+
+# =========================================================
+# SQLITE EVENTS
+# =========================================================
 
 
 def _register_sqlite_events(
@@ -70,7 +97,8 @@ def _register_sqlite_events(
     """
     Configure SQLite connections.
 
-    Applied to every DB-API connection created by SQLAlchemy.
+    Applied to every DB-API connection created
+    by SQLAlchemy.
     """
 
     busy_timeout_ms = int(timeout_seconds * 1000)
@@ -98,7 +126,14 @@ def _register_sqlite_events(
 
             cursor.execute("PRAGMA synchronous = NORMAL;")
 
-            cursor.execute(f"PRAGMA busy_timeout = " f"{busy_timeout_ms};")
+            cursor.execute(("PRAGMA busy_timeout = " f"{busy_timeout_ms};"))
 
         finally:
             cursor.close()
+
+
+__all__ = [
+    "SQLITE_TIMEOUT_SECONDS",
+    "build_database_url",
+    "create_database_engine",
+]

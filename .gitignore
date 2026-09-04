@@ -1,6 +1,8 @@
 # Virtual environment
 .venv/
 venv/
+
+# Pytest
 .pytest_cache/
 .pytest-tmp/
 

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Engine
+from sqlalchemy import (
+    Engine,
+)
 
 from django_assistant_bot.bot.context import (
     ApplicationContext,
@@ -97,9 +99,7 @@ def bootstrap_application() -> ApplicationBootstrap:
     # DATABASE
     # -----------------------------------------------------
 
-    engine = create_database_engine(
-        environment,
-    )
+    engine = create_database_engine()
 
     sessions = SessionManager(
         engine,
@@ -156,9 +156,9 @@ def bootstrap_application() -> ApplicationBootstrap:
     # -----------------------------------------------------
 
     backup_coordinator = BackupCoordinator(
-        projects=project_service,
-        settings=settings_service,
-        history=backup_history_repository,
+        projects=(project_service),
+        settings=(settings_service),
+        history=(backup_history_repository),
     )
 
     # -----------------------------------------------------
@@ -166,8 +166,8 @@ def bootstrap_application() -> ApplicationBootstrap:
     # -----------------------------------------------------
 
     backup_scheduler = BackupSchedulerService(
-        projects=project_service,
-        backups=backup_coordinator,
+        projects=(project_service),
+        backups=(backup_coordinator),
     )
 
     # -----------------------------------------------------
@@ -175,13 +175,13 @@ def bootstrap_application() -> ApplicationBootstrap:
     # -----------------------------------------------------
 
     system_status_service = SystemStatusService(
-        settings=settings_service,
-        projects=project_service,
-        admins=admin_service,
-        scheduler=backup_scheduler,
-        runtime=runtime_service,
-        database_health=database_health_service,
-        backup_history=backup_history_service,
+        settings=(settings_service),
+        projects=(project_service),
+        admins=(admin_service),
+        scheduler=(backup_scheduler),
+        runtime=(runtime_service),
+        database_health=(database_health_service),
+        backup_history=(backup_history_service),
     )
 
     # -----------------------------------------------------
@@ -189,8 +189,8 @@ def bootstrap_application() -> ApplicationBootstrap:
     # -----------------------------------------------------
 
     _bootstrap_admins(
-        admin_service=admin_service,
-        environment=environment,
+        admin_service=(admin_service),
+        environment=(environment),
     )
 
     # -----------------------------------------------------
@@ -198,14 +198,14 @@ def bootstrap_application() -> ApplicationBootstrap:
     # -----------------------------------------------------
 
     context = ApplicationContext(
-        environment=environment,
-        projects=project_service,
-        admins=admin_service,
-        settings=settings_service,
-        backups=backup_coordinator,
-        backup_history=backup_history_service,
-        scheduler=backup_scheduler,
-        system_status=system_status_service,
+        environment=(environment),
+        projects=(project_service),
+        admins=(admin_service),
+        settings=(settings_service),
+        backups=(backup_coordinator),
+        backup_history=(backup_history_service),
+        scheduler=(backup_scheduler),
+        system_status=(system_status_service),
     )
 
     return ApplicationBootstrap(
@@ -236,3 +236,9 @@ def _bootstrap_admins(
         admin_service.add_admin(
             telegram_user_id,
         )
+
+
+__all__ = [
+    "ApplicationBootstrap",
+    "bootstrap_application",
+]

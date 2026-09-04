@@ -39,6 +39,7 @@ addopts = [
     "--strict-markers",
     "--strict-config",
     "--import-mode=importlib",
+    "--basetemp=.pytest-tmp",
 ]
 
 python_files = [

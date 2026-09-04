@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from pathlib import Path
 
 from pydantic import (
     Field,
@@ -14,25 +13,31 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
-from django_assistant_bot.core.exceptions import EnvironmentValidationError
+from django_assistant_bot.core.exceptions import (
+    EnvironmentValidationError,
+)
 from django_assistant_bot.core.paths import (
-    DEFAULT_DATABASE_PATH,
     ENV_FILE,
-    PROJECT_ROOT,
 )
 
 
 class AppEnvironment(StrEnum):
     DEVELOPMENT = "development"
+
     PRODUCTION = "production"
+
     TESTING = "testing"
 
 
 class LogLevel(StrEnum):
     DEBUG = "DEBUG"
+
     INFO = "INFO"
+
     WARNING = "WARNING"
+
     ERROR = "ERROR"
+
     CRITICAL = "CRITICAL"
 
 
@@ -62,14 +67,6 @@ class EnvironmentSettings(BaseSettings):
         default=SecretStr(""),
     )
 
-    database_path: Path = DEFAULT_DATABASE_PATH
-
-    sqlite_timeout_seconds: float = Field(
-        default=10.0,
-        gt=0,
-        le=120,
-    )
-
     log_level: LogLevel = LogLevel.INFO
 
     bootstrap_admin_ids: list[int] = Field(
@@ -84,6 +81,10 @@ class EnvironmentSettings(BaseSettings):
         cls,
         value: SecretStr,
     ) -> SecretStr:
+        """
+        Validate Telegram bot token.
+        """
+
         token = value.get_secret_value().strip()
 
         if not token:
@@ -95,21 +96,6 @@ class EnvironmentSettings(BaseSettings):
         return SecretStr(token)
 
     @field_validator(
-        "database_path",
-    )
-    @classmethod
-    def normalize_database_path(
-        cls,
-        value: Path,
-    ) -> Path:
-        path = value.expanduser()
-
-        if not path.is_absolute():
-            path = PROJECT_ROOT / path
-
-        return path.resolve()
-
-    @field_validator(
         "bootstrap_admin_ids",
     )
     @classmethod
@@ -117,24 +103,34 @@ class EnvironmentSettings(BaseSettings):
         cls,
         value: list[int],
     ) -> list[int]:
+        """
+        Normalize and validate bootstrap administrators.
+        """
+
         unique_ids = list(dict.fromkeys(value))
 
         for telegram_user_id in unique_ids:
             if telegram_user_id <= 0:
-                raise ValueError("Bootstrap admin IDs must be positive.")
+                raise ValueError(("Bootstrap admin IDs " "must be positive."))
 
         return unique_ids
 
     @property
-    def is_development(self) -> bool:
+    def is_development(
+        self,
+    ) -> bool:
         return self.environment is AppEnvironment.DEVELOPMENT
 
     @property
-    def is_production(self) -> bool:
+    def is_production(
+        self,
+    ) -> bool:
         return self.environment is AppEnvironment.PRODUCTION
 
     @property
-    def is_testing(self) -> bool:
+    def is_testing(
+        self,
+    ) -> bool:
         return self.environment is AppEnvironment.TESTING
 
 
@@ -143,30 +139,46 @@ class EnvironmentManager:
     Loads and owns immutable environment configuration.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+    ) -> None:
         self._settings: EnvironmentSettings | None = None
 
     @property
-    def settings(self) -> EnvironmentSettings:
+    def settings(
+        self,
+    ) -> EnvironmentSettings:
         if self._settings is None:
             raise EnvironmentValidationError(
-                "Environment configuration has not been loaded."
+                ("Environment configuration " "has not been loaded.")
             )
 
         return self._settings
 
-    def load(self) -> EnvironmentSettings:
+    def load(
+        self,
+    ) -> EnvironmentSettings:
         try:
             settings = EnvironmentSettings()
 
         except ValidationError as exc:
             raise EnvironmentValidationError(
-                "Invalid environment configuration."
+                ("Invalid environment " "configuration.")
             ) from exc
 
         self._settings = settings
 
         return settings
 
-    def reload(self) -> EnvironmentSettings:
+    def reload(
+        self,
+    ) -> EnvironmentSettings:
         return self.load()
+
+
+__all__ = [
+    "AppEnvironment",
+    "EnvironmentManager",
+    "EnvironmentSettings",
+    "LogLevel",
+]
